@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>logFormatVersion</key>
+	<integer>12</integer>
+	<key>logs</key>
+	<dict>
+		<key>642DAA46-42A4-47DE-9D27-FE2A2A30542D</key>
+		<dict>
+			<key>className</key>
+			<string>IDECommandLineBuildLog</string>
+			<key>documentTypeString</key>
+			<string>&lt;nil&gt;</string>
+			<key>domainType</key>
+			<string>Xcode.IDEActivityLogDomainType.BuildLog</string>
+			<key>fileName</key>
+			<string>642DAA46-42A4-47DE-9D27-FE2A2A30542D.xcactivitylog</string>
+			<key>hasPrimaryLog</key>
+			<true/>
+			<key>primaryObservable</key>
+			<dict>
+				<key>highLevelStatus</key>
+				<string>W</string>
+				<key>totalNumberOfAnalyzerIssues</key>
+				<integer>0</integer>
+				<key>totalNumberOfErrors</key>
+				<integer>0</integer>
+				<key>totalNumberOfTestFailures</key>
+				<integer>0</integer>
+				<key>totalNumberOfWarnings</key>
+				<integer>2</integer>
+			</dict>
+			<key>schemeIdentifier-containerName</key>
+			<string>Easy Notes project</string>
+			<key>schemeIdentifier-schemeName</key>
+			<string>Easy Notes</string>
+			<key>schemeIdentifier-sharedScheme</key>
+			<integer>1</integer>
+			<key>signature</key>
+			<string>Building project Easy Notes with scheme Easy Notes and configuration Release</string>
+			<key>timeStartedRecording</key>
+			<real>804538857.90486801</real>
+			<key>timeStoppedRecording</key>
+			<real>804538873.74928796</real>
+			<key>title</key>
+			<string>Building project Easy Notes with scheme Easy Notes and configuration Release</string>
+			<key>uniqueIdentifier</key>
+			<string>642DAA46-42A4-47DE-9D27-FE2A2A30542D</string>
+		</dict>
+		<key>CD543AC4-044D-415A-AE0E-B43B742D4B42</key>
+		<dict>
+			<key>className</key>
+			<string>IDECommandLineBuildLog</string>
+			<key>documentTypeString</key>
+			<string>&lt;nil&gt;</string>
+			<key>domainType</key>
+			<string>Xcode.IDEActivityLogDomainType.BuildLog</string>
+			<key>fileName</key>
+			<string>CD543AC4-044D-415A-AE0E-B43B742D4B42.xcactivitylog</string>
+			<key>hasPrimaryLog</key>
+			<true/>
+			<key>primaryObservable</key>
+			<dict>
+				<key>highLevelStatus</key>
+				<string>S</string>
+				<key>totalNumberOfAnalyzerIssues</key>
+				<integer>0</integer>
+				<key>totalNumberOfErrors</key>
+				<integer>0</integer>
+				<key>totalNumberOfTestFailures</key>
+				<integer>0</integer>
+				<key>totalNumberOfWarnings</key>
+				<integer>0</integer>
+			</dict>
+			<key>schemeIdentifier-containerName</key>
+			<string>Easy Notes project</string>
+			<key>schemeIdentifier-schemeName</key>
+			<string>Easy Notes</string>
+			<key>schemeIdentifier-sharedScheme</key>
+			<integer>1</integer>
+			<key>signature</key>
+			<string>Cleaning project Easy Notes with scheme Easy Notes and configuration Release</string>
+			<key>timeStartedRecording</key>
+			<real>804538857.54399002</real>
+			<key>timeStoppedRecording</key>
+			<real>804538857.90260994</real>
+			<key>title</key>
+			<string>Cleaning project Easy Notes with scheme Easy Notes and configuration Release</string>
+			<key>uniqueIdentifier</key>
+			<string>CD543AC4-044D-415A-AE0E-B43B742D4B42</string>
+		</dict>
+	</dict>
+</dict>
+</plist>

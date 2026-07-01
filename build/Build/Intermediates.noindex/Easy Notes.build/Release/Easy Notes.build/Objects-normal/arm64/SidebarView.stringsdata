@@ -1,0 +1,240 @@
+{
+  "source": "/Users/felipevieira/Developer/Easy Notes/Easy Notes/Views/Sidebar/SidebarView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Novo Caderno",
+        "location": {
+          "startingColumn": 20,
+          "startingLine": 214
+        }
+      },
+      {
+        "comment": "",
+        "key": "Renomear Caderno",
+        "location": {
+          "startingColumn": 20,
+          "startingLine": 226
+        }
+      },
+      {
+        "comment": "",
+        "key": "Excluir Caderno",
+        "location": {
+          "startingColumn": 20,
+          "startingLine": 242
+        }
+      },
+      {
+        "comment": "",
+        "key": "Geral",
+        "location": {
+          "startingColumn": 38,
+          "startingLine": 21
+        }
+      },
+      {
+        "comment": "",
+        "key": "Todas as Notas",
+        "location": {
+          "startingColumn": 34,
+          "startingLine": 30
+        }
+      },
+      {
+        "comment": "",
+        "key": "%lld",
+        "location": {
+          "startingColumn": 34,
+          "startingLine": 33
+        }
+      },
+      {
+        "comment": "",
+        "key": "Notas Soltas",
+        "location": {
+          "startingColumn": 34,
+          "startingLine": 55
+        }
+      },
+      {
+        "comment": "",
+        "key": "%lld",
+        "location": {
+          "startingColumn": 34,
+          "startingLine": 58
+        }
+      },
+      {
+        "comment": "",
+        "key": "Lixeira",
+        "location": {
+          "startingColumn": 34,
+          "startingLine": 91
+        }
+      },
+      {
+        "comment": "",
+        "key": "%lld",
+        "location": {
+          "startingColumn": 34,
+          "startingLine": 94
+        }
+      },
+      {
+        "comment": "",
+        "key": "Esvaziar Lixeira",
+        "location": {
+          "startingColumn": 32,
+          "startingLine": 108
+        }
+      },
+      {
+        "comment": "",
+        "key": "Meus Cadernos",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 129
+        }
+      },
+      {
+        "comment": "",
+        "key": "Novo Caderno",
+        "location": {
+          "startingColumn": 27,
+          "startingLine": 141
+        }
+      },
+      {
+        "comment": "",
+        "key": "%lld",
+        "location": {
+          "startingColumn": 38,
+          "startingLine": 155
+        }
+      },
+      {
+        "comment": "",
+        "key": "Renomear...",
+        "location": {
+          "startingColumn": 36,
+          "startingLine": 169
+        }
+      },
+      {
+        "comment": "",
+        "key": "Excluir Caderno...",
+        "location": {
+          "startingColumn": 36,
+          "startingLine": 175
+        }
+      },
+      {
+        "comment": "",
+        "key": "Novo Caderno",
+        "location": {
+          "startingColumn": 34,
+          "startingLine": 203
+        }
+      },
+      {
+        "comment": "",
+        "key": "Nome do caderno",
+        "location": {
+          "startingColumn": 27,
+          "startingLine": 215
+        }
+      },
+      {
+        "comment": "",
+        "key": "Cancelar",
+        "location": {
+          "startingColumn": 24,
+          "startingLine": 216
+        }
+      },
+      {
+        "comment": "",
+        "key": "Criar",
+        "location": {
+          "startingColumn": 24,
+          "startingLine": 219
+        }
+      },
+      {
+        "comment": "",
+        "key": "Insira o nome para o novo caderno de notas.",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 224
+        }
+      },
+      {
+        "comment": "",
+        "key": "Nome do caderno",
+        "location": {
+          "startingColumn": 27,
+          "startingLine": 227
+        }
+      },
+      {
+        "comment": "",
+        "key": "Cancelar",
+        "location": {
+          "startingColumn": 24,
+          "startingLine": 228
+        }
+      },
+      {
+        "comment": "",
+        "key": "Salvar",
+        "location": {
+          "startingColumn": 24,
+          "startingLine": 232
+        }
+      },
+      {
+        "comment": "",
+        "key": "Insira o novo nome para este caderno.",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 240
+        }
+      },
+      {
+        "comment": "",
+        "key": "Excluir Caderno e Notas",
+        "location": {
+          "startingColumn": 24,
+          "startingLine": 243
+        }
+      },
+      {
+        "comment": "",
+        "key": "Excluir Apenas Caderno",
+        "location": {
+          "startingColumn": 24,
+          "startingLine": 249
+        }
+      },
+      {
+        "comment": "",
+        "key": "Cancelar",
+        "location": {
+          "startingColumn": 24,
+          "startingLine": 255
+        }
+      },
+      {
+        "comment": "",
+        "key": "As notas contidas neste caderno serão enviadas para a Lixeira, a menos que escolha manter as notas como Notas Soltas.",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 259
+        }
+      }
+    ]
+  },
+  "version": 1
+}

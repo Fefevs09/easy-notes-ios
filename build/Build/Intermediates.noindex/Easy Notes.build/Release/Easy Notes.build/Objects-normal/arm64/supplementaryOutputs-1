@@ -1,0 +1,12 @@
+{
+  "/Users/felipevieira/Developer/Easy Notes/Easy Notes/Models/Note.swift" : {
+    "abi-baseline-json" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/Easy_Notes.abi.json",
+    "const-values" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/Easy Notes-primary.swiftconstvalues",
+    "dependencies" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/Easy Notes-primary.d",
+    "diagnostics" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/Easy Notes-primary.dia",
+    "objc-header" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/Easy_Notes-Swift.h",
+    "swiftdoc" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/Easy_Notes.swiftdoc",
+    "swiftmodule" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/Easy_Notes.swiftmodule",
+    "swiftsourceinfo" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/Easy_Notes.swiftsourceinfo"
+  }
+}
