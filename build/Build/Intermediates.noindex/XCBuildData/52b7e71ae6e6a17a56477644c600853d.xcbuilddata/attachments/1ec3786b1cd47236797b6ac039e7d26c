@@ -1,0 +1,91 @@
+{
+  "" : {
+    "const-values" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/Easy Notes-primary.swiftconstvalues",
+    "dependencies" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/Easy Notes-primary.d",
+    "diagnostics" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/Easy Notes-primary.dia",
+    "emit-module-dependencies" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/Easy Notes-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/Easy Notes-primary-emit-module.dia",
+    "pch" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/Easy Notes-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/Easy Notes-primary.swiftdeps"
+  },
+  "/Users/felipevieira/Developer/Easy Notes/Easy Notes/ContentView.swift" : {
+    "index-unit-output-path" : "/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/ContentView.o",
+    "llvm-bc" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/ContentView.bc",
+    "object" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/ContentView.o"
+  },
+  "/Users/felipevieira/Developer/Easy Notes/Easy Notes/Easy_NotesApp.swift" : {
+    "index-unit-output-path" : "/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/Easy_NotesApp.o",
+    "llvm-bc" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/Easy_NotesApp.bc",
+    "object" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/Easy_NotesApp.o"
+  },
+  "/Users/felipevieira/Developer/Easy Notes/Easy Notes/Models/Note.swift" : {
+    "index-unit-output-path" : "/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/Note.o",
+    "llvm-bc" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/Note.bc",
+    "object" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/Note.o"
+  },
+  "/Users/felipevieira/Developer/Easy Notes/Easy Notes/Models/Notebook.swift" : {
+    "index-unit-output-path" : "/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/Notebook.o",
+    "llvm-bc" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/Notebook.bc",
+    "object" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/Notebook.o"
+  },
+  "/Users/felipevieira/Developer/Easy Notes/Easy Notes/Models/Stroke.swift" : {
+    "index-unit-output-path" : "/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/Stroke.o",
+    "llvm-bc" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/Stroke.bc",
+    "object" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/Stroke.o"
+  },
+  "/Users/felipevieira/Developer/Easy Notes/Easy Notes/Persistence/CoreDataStack.swift" : {
+    "index-unit-output-path" : "/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/CoreDataStack.o",
+    "llvm-bc" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/CoreDataStack.bc",
+    "object" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/CoreDataStack.o"
+  },
+  "/Users/felipevieira/Developer/Easy Notes/Easy Notes/ViewModels/CanvasViewModel.swift" : {
+    "index-unit-output-path" : "/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/CanvasViewModel.o",
+    "llvm-bc" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/CanvasViewModel.bc",
+    "object" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/CanvasViewModel.o"
+  },
+  "/Users/felipevieira/Developer/Easy Notes/Easy Notes/ViewModels/NoteViewModel.swift" : {
+    "index-unit-output-path" : "/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/NoteViewModel.o",
+    "llvm-bc" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/NoteViewModel.bc",
+    "object" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/NoteViewModel.o"
+  },
+  "/Users/felipevieira/Developer/Easy Notes/Easy Notes/Views/Editor/DrawingCanvasView.swift" : {
+    "index-unit-output-path" : "/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/DrawingCanvasView.o",
+    "llvm-bc" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/DrawingCanvasView.bc",
+    "object" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/DrawingCanvasView.o"
+  },
+  "/Users/felipevieira/Developer/Easy Notes/Easy Notes/Views/Editor/PDFAnnotationCanvasView.swift" : {
+    "index-unit-output-path" : "/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/PDFAnnotationCanvasView.o",
+    "llvm-bc" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/PDFAnnotationCanvasView.bc",
+    "object" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/PDFAnnotationCanvasView.o"
+  },
+  "/Users/felipevieira/Developer/Easy Notes/Easy Notes/Views/Editor/TextEditorView.swift" : {
+    "index-unit-output-path" : "/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/TextEditorView.o",
+    "llvm-bc" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/TextEditorView.bc",
+    "object" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/TextEditorView.o"
+  },
+  "/Users/felipevieira/Developer/Easy Notes/Easy Notes/Views/Editor/ThumbnailBarView.swift" : {
+    "index-unit-output-path" : "/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/ThumbnailBarView.o",
+    "llvm-bc" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/ThumbnailBarView.bc",
+    "object" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/ThumbnailBarView.o"
+  },
+  "/Users/felipevieira/Developer/Easy Notes/Easy Notes/Views/NoteList/NoteListView.swift" : {
+    "index-unit-output-path" : "/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/NoteListView.o",
+    "llvm-bc" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/NoteListView.bc",
+    "object" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/NoteListView.o"
+  },
+  "/Users/felipevieira/Developer/Easy Notes/Easy Notes/Views/Sidebar/SidebarView.swift" : {
+    "index-unit-output-path" : "/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/SidebarView.o",
+    "llvm-bc" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/SidebarView.bc",
+    "object" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/SidebarView.o"
+  },
+  "/Users/felipevieira/Developer/Easy Notes/Easy Notes/Views/Toolbar/EditorToolbarView.swift" : {
+    "index-unit-output-path" : "/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/EditorToolbarView.o",
+    "llvm-bc" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/EditorToolbarView.bc",
+    "object" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/EditorToolbarView.o"
+  },
+  "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/DerivedSources/GeneratedAssetSymbols.swift" : {
+    "index-unit-output-path" : "/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/GeneratedAssetSymbols.o",
+    "llvm-bc" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/GeneratedAssetSymbols.bc",
+    "object" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/GeneratedAssetSymbols.o"
+  }
+}

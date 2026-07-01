@@ -6,7 +6,7 @@
 	<integer>12</integer>
 	<key>logs</key>
 	<dict>
-		<key>642DAA46-42A4-47DE-9D27-FE2A2A30542D</key>
+		<key>78E8B52D-3C87-4F6F-961A-10FA12F747E4</key>
 		<dict>
 			<key>className</key>
 			<string>IDECommandLineBuildLog</string>
@@ -15,7 +15,7 @@
 			<key>domainType</key>
 			<string>Xcode.IDEActivityLogDomainType.BuildLog</string>
 			<key>fileName</key>
-			<string>642DAA46-42A4-47DE-9D27-FE2A2A30542D.xcactivitylog</string>
+			<string>78E8B52D-3C87-4F6F-961A-10FA12F747E4.xcactivitylog</string>
 			<key>hasPrimaryLog</key>
 			<true/>
 			<key>primaryObservable</key>
@@ -40,15 +40,15 @@
 			<key>signature</key>
 			<string>Building project Easy Notes with scheme Easy Notes and configuration Release</string>
 			<key>timeStartedRecording</key>
-			<real>804538857.90486801</real>
+			<real>804603002.70865095</real>
 			<key>timeStoppedRecording</key>
-			<real>804538873.74928796</real>
+			<real>804603022.48911202</real>
 			<key>title</key>
 			<string>Building project Easy Notes with scheme Easy Notes and configuration Release</string>
 			<key>uniqueIdentifier</key>
-			<string>642DAA46-42A4-47DE-9D27-FE2A2A30542D</string>
+			<string>78E8B52D-3C87-4F6F-961A-10FA12F747E4</string>
 		</dict>
-		<key>CD543AC4-044D-415A-AE0E-B43B742D4B42</key>
+		<key>B09F0C64-077C-4006-AFEC-D7A03C35F187</key>
 		<dict>
 			<key>className</key>
 			<string>IDECommandLineBuildLog</string>
@@ -57,13 +57,13 @@
 			<key>domainType</key>
 			<string>Xcode.IDEActivityLogDomainType.BuildLog</string>
 			<key>fileName</key>
-			<string>CD543AC4-044D-415A-AE0E-B43B742D4B42.xcactivitylog</string>
+			<string>B09F0C64-077C-4006-AFEC-D7A03C35F187.xcactivitylog</string>
 			<key>hasPrimaryLog</key>
 			<true/>
 			<key>primaryObservable</key>
 			<dict>
 				<key>highLevelStatus</key>
-				<string>S</string>
+				<string>W</string>
 				<key>totalNumberOfAnalyzerIssues</key>
 				<integer>0</integer>
 				<key>totalNumberOfErrors</key>
@@ -71,7 +71,7 @@
 				<key>totalNumberOfTestFailures</key>
 				<integer>0</integer>
 				<key>totalNumberOfWarnings</key>
-				<integer>0</integer>
+				<integer>2</integer>
 			</dict>
 			<key>schemeIdentifier-containerName</key>
 			<string>Easy Notes project</string>
@@ -80,15 +80,15 @@
 			<key>schemeIdentifier-sharedScheme</key>
 			<integer>1</integer>
 			<key>signature</key>
-			<string>Cleaning project Easy Notes with scheme Easy Notes and configuration Release</string>
+			<string>Building project Easy Notes with scheme Easy Notes and configuration Release</string>
 			<key>timeStartedRecording</key>
-			<real>804538857.54399002</real>
+			<real>804604619.06635404</real>
 			<key>timeStoppedRecording</key>
-			<real>804538857.90260994</real>
+			<real>804604634.58623505</real>
 			<key>title</key>
-			<string>Cleaning project Easy Notes with scheme Easy Notes and configuration Release</string>
+			<string>Building project Easy Notes with scheme Easy Notes and configuration Release</string>
 			<key>uniqueIdentifier</key>
-			<string>CD543AC4-044D-415A-AE0E-B43B742D4B42</string>
+			<string>B09F0C64-077C-4006-AFEC-D7A03C35F187</string>
 		</dict>
 	</dict>
 </dict>

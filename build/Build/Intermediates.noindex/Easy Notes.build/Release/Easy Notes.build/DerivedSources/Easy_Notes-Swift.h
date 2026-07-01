@@ -450,6 +450,8 @@ SWIFT_CLASS_NAMED("Notebook")
 SWIFT_CLASS("_TtC10Easy_Notes17PageDrawingCanvas")
 @interface PageDrawingCanvas : NSView
 - (nullable instancetype)initWithCoder:(NSCoder * _Nonnull)coder OBJC_DESIGNATED_INITIALIZER;
+- (void)updateTrackingAreas;
+- (void)cursorUpdate:(NSEvent * _Nonnull)event;
 - (NSView * _Nullable)hitTest:(NSPoint)point SWIFT_WARN_UNUSED_RESULT;
 - (void)drawRect:(NSRect)dirtyRect;
 - (void)mouseDown:(NSEvent * _Nonnull)event;
