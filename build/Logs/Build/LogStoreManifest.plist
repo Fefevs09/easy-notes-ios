@@ -6,7 +6,7 @@
 	<integer>12</integer>
 	<key>logs</key>
 	<dict>
-		<key>78E8B52D-3C87-4F6F-961A-10FA12F747E4</key>
+		<key>712EC11D-0543-42FA-9123-A864105A883B</key>
 		<dict>
 			<key>className</key>
 			<string>IDECommandLineBuildLog</string>
@@ -15,13 +15,13 @@
 			<key>domainType</key>
 			<string>Xcode.IDEActivityLogDomainType.BuildLog</string>
 			<key>fileName</key>
-			<string>78E8B52D-3C87-4F6F-961A-10FA12F747E4.xcactivitylog</string>
+			<string>712EC11D-0543-42FA-9123-A864105A883B.xcactivitylog</string>
 			<key>hasPrimaryLog</key>
 			<true/>
 			<key>primaryObservable</key>
 			<dict>
 				<key>highLevelStatus</key>
-				<string>W</string>
+				<string>S</string>
 				<key>totalNumberOfAnalyzerIssues</key>
 				<integer>0</integer>
 				<key>totalNumberOfErrors</key>
@@ -29,7 +29,7 @@
 				<key>totalNumberOfTestFailures</key>
 				<integer>0</integer>
 				<key>totalNumberOfWarnings</key>
-				<integer>2</integer>
+				<integer>0</integer>
 			</dict>
 			<key>schemeIdentifier-containerName</key>
 			<string>Easy Notes project</string>
@@ -38,17 +38,17 @@
 			<key>schemeIdentifier-sharedScheme</key>
 			<integer>1</integer>
 			<key>signature</key>
-			<string>Building project Easy Notes with scheme Easy Notes and configuration Release</string>
+			<string>Cleaning project Easy Notes with scheme Easy Notes and configuration Release</string>
 			<key>timeStartedRecording</key>
-			<real>804603002.70865095</real>
+			<real>804623652.41522706</real>
 			<key>timeStoppedRecording</key>
-			<real>804603022.48911202</real>
+			<real>804623652.88086998</real>
 			<key>title</key>
-			<string>Building project Easy Notes with scheme Easy Notes and configuration Release</string>
+			<string>Cleaning project Easy Notes with scheme Easy Notes and configuration Release</string>
 			<key>uniqueIdentifier</key>
-			<string>78E8B52D-3C87-4F6F-961A-10FA12F747E4</string>
+			<string>712EC11D-0543-42FA-9123-A864105A883B</string>
 		</dict>
-		<key>B09F0C64-077C-4006-AFEC-D7A03C35F187</key>
+		<key>A0BF7756-2538-4EEE-94A6-716800F4C86E</key>
 		<dict>
 			<key>className</key>
 			<string>IDECommandLineBuildLog</string>
@@ -57,7 +57,7 @@
 			<key>domainType</key>
 			<string>Xcode.IDEActivityLogDomainType.BuildLog</string>
 			<key>fileName</key>
-			<string>B09F0C64-077C-4006-AFEC-D7A03C35F187.xcactivitylog</string>
+			<string>A0BF7756-2538-4EEE-94A6-716800F4C86E.xcactivitylog</string>
 			<key>hasPrimaryLog</key>
 			<true/>
 			<key>primaryObservable</key>
@@ -82,13 +82,13 @@
 			<key>signature</key>
 			<string>Building project Easy Notes with scheme Easy Notes and configuration Release</string>
 			<key>timeStartedRecording</key>
-			<real>804604619.06635404</real>
+			<real>804623652.88427305</real>
 			<key>timeStoppedRecording</key>
-			<real>804604634.58623505</real>
+			<real>804623669.59040904</real>
 			<key>title</key>
 			<string>Building project Easy Notes with scheme Easy Notes and configuration Release</string>
 			<key>uniqueIdentifier</key>
-			<string>B09F0C64-077C-4006-AFEC-D7A03C35F187</string>
+			<string>A0BF7756-2538-4EEE-94A6-716800F4C86E</string>
 		</dict>
 	</dict>
 </dict>

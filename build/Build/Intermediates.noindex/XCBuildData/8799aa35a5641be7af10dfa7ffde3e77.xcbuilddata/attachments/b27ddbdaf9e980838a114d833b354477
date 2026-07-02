@@ -1,0 +1,18 @@
+/Users/felipevieira/Developer/Easy\ Notes/Easy\ Notes/Models/Note.swift
+/Users/felipevieira/Developer/Easy\ Notes/Easy\ Notes/Models/Notebook.swift
+/Users/felipevieira/Developer/Easy\ Notes/Easy\ Notes/Models/Stroke.swift
+/Users/felipevieira/Developer/Easy\ Notes/Easy\ Notes/Persistence/CoreDataStack.swift
+/Users/felipevieira/Developer/Easy\ Notes/Easy\ Notes/ViewModels/CanvasViewModel.swift
+/Users/felipevieira/Developer/Easy\ Notes/Easy\ Notes/ViewModels/NoteViewModel.swift
+/Users/felipevieira/Developer/Easy\ Notes/Easy\ Notes/Views/Editor/DrawingCanvasView.swift
+/Users/felipevieira/Developer/Easy\ Notes/Easy\ Notes/Views/Editor/MakeEraseCursor.swift
+/Users/felipevieira/Developer/Easy\ Notes/Easy\ Notes/Views/Editor/PDFAnnotationCanvasView.swift
+/Users/felipevieira/Developer/Easy\ Notes/Easy\ Notes/Views/Editor/TextEditorView.swift
+/Users/felipevieira/Developer/Easy\ Notes/Easy\ Notes/Views/Editor/ThumbnailBarView.swift
+/Users/felipevieira/Developer/Easy\ Notes/Easy\ Notes/Views/NoteList/NoteListView.swift
+/Users/felipevieira/Developer/Easy\ Notes/Easy\ Notes/Views/NoteList/NotesView.swift
+/Users/felipevieira/Developer/Easy\ Notes/Easy\ Notes/Views/Sidebar/SidebarView.swift
+/Users/felipevieira/Developer/Easy\ Notes/Easy\ Notes/Views/Toolbar/EditorToolbarView.swift
+/Users/felipevieira/Developer/Easy\ Notes/Easy\ Notes/ContentView.swift
+/Users/felipevieira/Developer/Easy\ Notes/Easy\ Notes/Easy_NotesApp.swift
+/Users/felipevieira/Developer/Easy\ Notes/build/Build/Intermediates.noindex/Easy\ Notes.build/Release/Easy\ Notes.build/DerivedSources/GeneratedAssetSymbols.swift

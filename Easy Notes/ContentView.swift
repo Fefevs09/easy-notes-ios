@@ -17,20 +17,33 @@ struct ContentView: View {
         NavigationSplitView {
             SidebarView()
                 .frame(minWidth: 180, idealWidth: 200, maxWidth: 300)
-        } content: {
-            NoteListView()
-                .frame(minWidth: 220, idealWidth: 250, maxWidth: 350)
         } detail: {
             if let note = viewModel.selectedNote {
                 VStack(spacing: 0) {
                     // MARK: - Title Input
-                    TextField("Sem título", text: $activeTitle)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 26, weight: .bold, design: .rounded))
-                        .padding(.horizontal, 24)
-                        .padding(.top, 52)
-                        .padding(.bottom, 12)
-                        .foregroundColor(.primary)
+                    HStack(spacing: 12) {
+                        Button(action: {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                viewModel.selectedNote = nil
+                            }
+                        }) {
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(.accentColor)
+                                .padding(8)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .help("Voltar para Notas")
+                        
+                        TextField("Sem título", text: $activeTitle)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 26, weight: .bold, design: .rounded))
+                            .foregroundColor(.primary)
+                    }
+                    .padding(.horizontal, 24)
+                    .padding(.top, 52)
+                    .padding(.bottom, 12)
                     
                     // MARK: - Writing Toolbar (Samsung Notes style)
                     EditorToolbarView(canvasVM: canvasVM, isSidebarOpen: $isSidebarOpen)
@@ -43,8 +56,6 @@ struct ContentView: View {
                             PDFAnnotationCanvasView(canvasVM: canvasVM, noteVM: viewModel, noteId: note.id, zoomScale: $zoomScale, selectedPageIndex: $selectedPageIndex)
                                 .background(Color.clear)
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                .pointerStyle(drawingPointerStyle)
-                            
                             // Floating Zoom Controls
                             HStack(spacing: 8) {
                                 Button(action: {
@@ -100,25 +111,7 @@ struct ContentView: View {
                 }
                 .background(Color(NSColor.textBackgroundColor))
             } else {
-                // MARK: - Empty State Placeholder
-                VStack(spacing: 16) {
-                    Image(systemName: "note.text")
-                        .font(.system(size: 64))
-                        .foregroundColor(.secondary.opacity(0.35))
-                    
-                    Text("Nenhuma Nota Selecionada")
-                        .font(.title3)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.secondary)
-                    
-                    Text("Selecione um caderno na barra lateral e escolha uma nota, ou crie uma nova para começar a escrever.")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary.opacity(0.7))
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 48)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color(NSColor.windowBackgroundColor))
+                NotesView()
             }
         }
         .onAppear {
@@ -173,65 +166,5 @@ struct ContentView: View {
                 }
             }
         }
-    }
-    
-    // MARK: - Pointer Style Preview
-    private var drawingPointerStyle: PointerStyle? {
-//        guard canvasVM.isDrawingMode else { return nil }
-        
-        let cursorImage: NSImage
-        if canvasVM.activeTool == .eraser {
-            cursorImage = createEraserCursorImage()
-        } else {
-            let activeColor = NSColor(canvasVM.strokeColor)
-            cursorImage = createCircleCursorImage(color: activeColor, diameter: canvasVM.strokeWidth)
-        }
-        
-        return .image(Image(nsImage: cursorImage), hotSpot: .center)
-    }
-    
-    private func createCircleCursorImage(color: NSColor, diameter: CGFloat) -> NSImage {
-        let size = max(4.0, diameter)
-        let imageSize = NSSize(width: size + 4, height: size + 4)
-        let image = NSImage(size: imageSize)
-        
-        image.lockFocus()
-        let rect = NSRect(x: 2, y: 2, width: size, height: size)
-        let path = NSBezierPath(ovalIn: rect)
-        
-        color.setFill()
-        path.fill()
-        
-        NSColor.white.setStroke()
-        path.lineWidth = 1.0
-        path.stroke()
-        
-        let outerRect = rect.insetBy(dx: -0.5, dy: -0.5)
-        let outerPath = NSBezierPath(ovalIn: outerRect)
-        NSColor.black.withAlphaComponent(0.25).setStroke()
-        outerPath.lineWidth = 0.5
-        outerPath.stroke()
-        
-        image.unlockFocus()
-        return image
-    }
-    
-    private func createEraserCursorImage() -> NSImage {
-        let diameter: CGFloat = 36.0
-        let imageSize = NSSize(width: diameter + 4, height: diameter + 4)
-        let image = NSImage(size: imageSize)
-        
-        image.lockFocus()
-        let rect = NSRect(x: 2, y: 2, width: diameter, height: diameter)
-        let path = NSBezierPath(ovalIn: rect)
-        
-        NSColor.secondaryLabelColor.withAlphaComponent(0.6).setStroke()
-        path.lineWidth = 1.0
-        let pattern: [CGFloat] = [4.0, 4.0]
-        path.setLineDash(pattern, count: 2, phase: 0.0)
-        path.stroke()
-        
-        image.unlockFocus()
-        return image
     }
 }

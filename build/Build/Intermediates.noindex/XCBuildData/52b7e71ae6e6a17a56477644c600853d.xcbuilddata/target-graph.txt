@@ -1,2 +1,0 @@
-Target dependency graph (1 target)
-Target 'Easy Notes' in project 'Easy Notes' (no dependencies)

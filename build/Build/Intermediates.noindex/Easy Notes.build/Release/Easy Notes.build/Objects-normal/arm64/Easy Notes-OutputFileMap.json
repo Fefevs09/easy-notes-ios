@@ -53,6 +53,11 @@
     "llvm-bc" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/DrawingCanvasView.bc",
     "object" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/DrawingCanvasView.o"
   },
+  "/Users/felipevieira/Developer/Easy Notes/Easy Notes/Views/Editor/MakeEraseCursor.swift" : {
+    "index-unit-output-path" : "/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/MakeEraseCursor.o",
+    "llvm-bc" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/MakeEraseCursor.bc",
+    "object" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/MakeEraseCursor.o"
+  },
   "/Users/felipevieira/Developer/Easy Notes/Easy Notes/Views/Editor/PDFAnnotationCanvasView.swift" : {
     "index-unit-output-path" : "/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/PDFAnnotationCanvasView.o",
     "llvm-bc" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/PDFAnnotationCanvasView.bc",
@@ -72,6 +77,11 @@
     "index-unit-output-path" : "/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/NoteListView.o",
     "llvm-bc" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/NoteListView.bc",
     "object" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/NoteListView.o"
+  },
+  "/Users/felipevieira/Developer/Easy Notes/Easy Notes/Views/NoteList/NotesView.swift" : {
+    "index-unit-output-path" : "/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/NotesView.o",
+    "llvm-bc" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/NotesView.bc",
+    "object" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/NotesView.o"
   },
   "/Users/felipevieira/Developer/Easy Notes/Easy Notes/Views/Sidebar/SidebarView.swift" : {
     "index-unit-output-path" : "/Easy Notes.build/Release/Easy Notes.build/Objects-normal/arm64/SidebarView.o",

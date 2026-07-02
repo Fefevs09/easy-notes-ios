@@ -11,6 +11,37 @@ public enum FilterType: Hashable {
     case trash
 }
 
+public enum SortOption: String, CaseIterable, Identifiable {
+    case dateModifiedDescending = "Date modified (recent first)"
+    case dateModifiedAscending = "Date modified (oldest first)"
+    case dateCreatedDescending = "Date created (recent first)"
+    case dateCreatedAscending = "Date created (oldest first)"
+    case titleAscending = "Title (A-Z)"
+    case titleDescending = "Title (Z-A)"
+    
+    public var id: String { self.rawValue }
+    
+    public var localizedName: String {
+        switch self {
+        case .dateModifiedDescending, .dateModifiedAscending:
+            return "Date modified"
+        case .dateCreatedDescending, .dateCreatedAscending:
+            return "Date created"
+        case .titleAscending, .titleDescending:
+            return "Title"
+        }
+    }
+    
+    public var isAscending: Bool {
+        switch self {
+        case .dateModifiedAscending, .dateCreatedAscending, .titleAscending:
+            return true
+        default:
+            return false
+        }
+    }
+}
+
 public class NoteViewModel: ObservableObject {
     private let context: NSManagedObjectContext
     private let pdfDelegate = AnnotatedPDFDelegate()
@@ -28,6 +59,12 @@ public class NoteViewModel: ObservableObject {
     
     @Published public var selectedNote: Note? = nil
     @Published public var searchQuery: String = "" {
+        didSet {
+            loadNotes()
+        }
+    }
+    
+    @Published public var sortOption: SortOption = .dateModifiedDescending {
         didSet {
             loadNotes()
         }
@@ -65,7 +102,23 @@ public class NoteViewModel: ObservableObject {
     
     public func loadNotes() {
         let request = NSFetchRequest<Note>(entityName: "Note")
-        request.sortDescriptors = [NSSortDescriptor(keyPath: \Note.updatedAt, ascending: false)]
+        
+        let sortDescriptor: NSSortDescriptor
+        switch sortOption {
+        case .dateModifiedDescending:
+            sortDescriptor = NSSortDescriptor(keyPath: \Note.updatedAt, ascending: false)
+        case .dateModifiedAscending:
+            sortDescriptor = NSSortDescriptor(keyPath: \Note.updatedAt, ascending: true)
+        case .dateCreatedDescending:
+            sortDescriptor = NSSortDescriptor(keyPath: \Note.createdAt, ascending: false)
+        case .dateCreatedAscending:
+            sortDescriptor = NSSortDescriptor(keyPath: \Note.createdAt, ascending: true)
+        case .titleAscending:
+            sortDescriptor = NSSortDescriptor(keyPath: \Note.title, ascending: true)
+        case .titleDescending:
+            sortDescriptor = NSSortDescriptor(keyPath: \Note.title, ascending: false)
+        }
+        request.sortDescriptors = [sortDescriptor]
         
         var predicates: [NSPredicate] = []
         

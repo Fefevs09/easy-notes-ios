@@ -97,7 +97,8 @@ class PageDrawingCanvas: NSView {
             .mouseMoved,
             .cursorUpdate,
             .activeInActiveApp,
-            .inVisibleRect
+            .inVisibleRect,
+            .enabledDuringMouseDrag
         ]
         
         let newArea = NSTrackingArea(
@@ -111,29 +112,43 @@ class PageDrawingCanvas: NSView {
     }
 
     override func cursorUpdate(with event: NSEvent) {
-        updateCursor()
+        applyCursor()
     }
 
-    private func updateCursor() {
+    private func applyCursor() {
         guard let canvasVM = canvasVM, canvasVM.isDrawingMode else {
             NSCursor.arrow.set()
             return
         }
         
-        let cursor: NSCursor
+        let cursorImage: NSImage
         if canvasVM.activeTool == .eraser {
-            let cursorImage = NSImage.createEraserCursorImage()
-            cursor = NSCursor(image: cursorImage, hotSpot: NSPoint(x: cursorImage.size.width / 2, y: cursorImage.size.height / 2))
+            cursorImage = NSImage.createEraserCursorImage()
         } else {
-            let activeColor = NSColor(canvasVM.strokeColor)
-            let cursorImage = NSImage.createCircleCursorImage(color: activeColor, diameter: canvasVM.strokeWidth)
-            cursor = NSCursor(image: cursorImage, hotSpot: NSPoint(x: cursorImage.size.width / 2, y: cursorImage.size.height / 2))
+            cursorImage = NSImage.createCircleCursorImage(
+                color: NSColor(canvasVM.strokeColor),
+                diameter: canvasVM.strokeWidth
+            )
         }
-        cursor.set()
+        
+        let hotSpot = NSPoint(x: cursorImage.size.width / 2, y: cursorImage.size.height / 2)
+        NSCursor(image: cursorImage, hotSpot: hotSpot).set()
+    }
+    
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard let canvasVM = canvasVM, canvasVM.isDrawingMode else {
+            return nil
+        }
+        return super.hitTest(point)
     }
 
     func invalidateCursor() {
-        self.window?.invalidateCursorRects(for: self)
+       guard let window = window else { return }
+       let mouseLocInWindow = window.mouseLocationOutsideOfEventStream
+       let localPoint = convert(mouseLocInWindow, from: nil)
+       if bounds.contains(localPoint) {
+           applyCursor()
+       }
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -188,6 +203,8 @@ class PageDrawingCanvas: NSView {
             super.mouseDown(with: event)
             return
         }
+        
+        applyCursor()
 
         let point = self.convert(event.locationInWindow, from: nil)
 
@@ -206,6 +223,8 @@ class PageDrawingCanvas: NSView {
             return
         }
 
+        applyCursor()
+        
         let point = self.convert(event.locationInWindow, from: nil)
 
         if canvasVM.activeTool == .eraser {
@@ -225,6 +244,8 @@ class PageDrawingCanvas: NSView {
             return
         }
 
+        applyCursor()
+        
         if canvasVM.activeTool != .eraser, !activePoints.isEmpty {
             saveActiveStroke()
         }
