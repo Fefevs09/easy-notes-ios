@@ -39,7 +39,7 @@
       "indexPCHPath" : "/Users/felipevieira/Developer/Easy Notes/build/Index.noindex/PrecompiledHeaders",
       "pchPath" : "/Users/felipevieira/Developer/Easy Notes/build/Build/Intermediates.noindex/PrecompiledHeaders"
     },
-    "configurationName" : "Release",
+    "configurationName" : "Debug",
     "overrides" : {
       "commandLine" : {
         "table" : {

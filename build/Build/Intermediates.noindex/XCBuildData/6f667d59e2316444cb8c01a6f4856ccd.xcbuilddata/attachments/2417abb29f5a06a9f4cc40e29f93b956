@@ -1,5 +1,6 @@
 /Users/felipevieira/Developer/Easy\ Notes/Easy\ Notes/Models/Note.swift
 /Users/felipevieira/Developer/Easy\ Notes/Easy\ Notes/Models/Notebook.swift
+/Users/felipevieira/Developer/Easy\ Notes/Easy\ Notes/Models/ShapeObject.swift
 /Users/felipevieira/Developer/Easy\ Notes/Easy\ Notes/Models/Stroke.swift
 /Users/felipevieira/Developer/Easy\ Notes/Easy\ Notes/Persistence/CoreDataStack.swift
 /Users/felipevieira/Developer/Easy\ Notes/Easy\ Notes/ViewModels/CanvasViewModel.swift
@@ -15,4 +16,4 @@
 /Users/felipevieira/Developer/Easy\ Notes/Easy\ Notes/Views/Toolbar/EditorToolbarView.swift
 /Users/felipevieira/Developer/Easy\ Notes/Easy\ Notes/ContentView.swift
 /Users/felipevieira/Developer/Easy\ Notes/Easy\ Notes/Easy_NotesApp.swift
-/Users/felipevieira/Developer/Easy\ Notes/build/Build/Intermediates.noindex/Easy\ Notes.build/Release/Easy\ Notes.build/DerivedSources/GeneratedAssetSymbols.swift
+/Users/felipevieira/Developer/Easy\ Notes/build/Build/Intermediates.noindex/Easy\ Notes.build/Debug/Easy\ Notes.build/DerivedSources/GeneratedAssetSymbols.swift

@@ -275,6 +275,15 @@ class PageDrawingCanvas: NSView {
     weak var noteVM: NoteViewModel?
     weak var canvasVM: CanvasViewModel?
 
+    /// Current PDFView zoom, pushed in by the overlay provider so the cursor
+    /// footprint can match the on-screen stroke width. Rebuilds the cursor when
+    /// it changes.
+    var currentZoom: CGFloat = 1.0 {
+        didSet {
+            if abs(oldValue - currentZoom) > 0.001 { invalidateCursor() }
+        }
+    }
+
     private var activePoints: [CGPoint] = []
 
     // Shape drawing preview (while dragging out a new shape).
@@ -307,34 +316,67 @@ class PageDrawingCanvas: NSView {
     /// instead keeps our cursor correctly prioritized alongside PDFKit's own.
     override func resetCursorRects() {
         super.resetCursorRects()
+        addCursorRect(bounds, cursor: currentToolCursor())
+    }
 
-        guard let canvasVM = canvasVM, canvasVM.isDrawingMode else {
-            addCursorRect(bounds, cursor: .arrow)
-            return
-        }
+    /// A `.cursorUpdate` tracking area is the authoritative cursor mechanism
+    /// here: it takes precedence over PDFView's own cursor handling and is
+    /// re-consulted by AppKit whenever the pointer moves within the view, so the
+    /// tool cursor survives PDFKit re-laying out the page after a stroke saves.
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for area in trackingAreas { removeTrackingArea(area) }
+        let options: NSTrackingArea.Options = [.activeInActiveApp, .inVisibleRect, .cursorUpdate]
+        addTrackingArea(NSTrackingArea(rect: .zero, options: options, owner: self, userInfo: nil))
+    }
 
-        // Shape drawing uses a crosshair; the select tool uses the arrow.
-        if canvasVM.activeTool == .select {
-            addCursorRect(bounds, cursor: .arrow)
+    override func cursorUpdate(with event: NSEvent) {
+        guard let canvasVM = canvasVM, canvasVM.isDrawingMode,
+              canvasVM.activeTool != .select else {
+            super.cursorUpdate(with: event)
             return
         }
-        if canvasVM.activeTool == .shape {
-            addCursorRect(bounds, cursor: .crosshair)
-            return
+        currentToolCursor().set()
+    }
+
+    /// Force the tool cursor if the pointer is currently over this overlay.
+    /// Called after PDFKit-driven updates (which can stomp the cursor while the
+    /// pointer is stationary, e.g. right after a stroke is saved).
+    func applyCursorIfInside() {
+        guard let window = window, let canvasVM = canvasVM,
+              canvasVM.isDrawingMode, canvasVM.activeTool != .select else { return }
+        let point = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        if bounds.contains(point) {
+            currentToolCursor().set()
         }
+    }
+
+    /// The cursor for the active tool. Extracted so it can be both registered as
+    /// a cursor rect and `.set()` imperatively right after a gesture ends —
+    /// AppKit only rebuilds cursor rects on the next mouse move, so a stationary
+    /// pointer would otherwise revert to the arrow the moment a stroke finishes.
+    private func currentToolCursor() -> NSCursor {
+        guard let canvasVM = canvasVM, canvasVM.isDrawingMode else { return .arrow }
+        if canvasVM.activeTool == .select { return .arrow }
 
         let cursorImage: NSImage
-        if canvasVM.activeTool == .eraser {
-            cursorImage = NSImage.createEraserCursorImage()
-        } else {
-            cursorImage = NSImage.createCircleCursorImage(
+        switch canvasVM.activeTool {
+        case .shape:
+            cursorImage = NSImage.createShapeCrosshairImage()
+        case .eraser:
+            // Erase footprint is a fixed 18pt radius in page space (see eraseAt);
+            // scale the visible ring to match the current zoom.
+            cursorImage = NSImage.createEraserCursorImage(footprint: 36.0 * currentZoom)
+        default:
+            // Brush ring matches the actual painted width: page points × zoom.
+            cursorImage = NSImage.createBrushCursorImage(
                 color: NSColor(canvasVM.strokeColor),
-                diameter: canvasVM.strokeWidth
+                diameter: canvasVM.strokeWidth * currentZoom
             )
         }
 
         let hotSpot = NSPoint(x: cursorImage.size.width / 2, y: cursorImage.size.height / 2)
-        addCursorRect(bounds, cursor: NSCursor(image: cursorImage, hotSpot: hotSpot))
+        return NSCursor(image: cursorImage, hotSpot: hotSpot)
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -547,6 +589,10 @@ class PageDrawingCanvas: NSView {
 
         needsDisplay = true
         invalidateCursor()
+        // Re-assert the tool cursor immediately: the pointer is stationary at
+        // release, so AppKit won't rebuild the cursor rect until the next move
+        // and would otherwise show the default arrow in the meantime.
+        currentToolCursor().set()
     }
 
     // MARK: Shape creation
@@ -794,6 +840,7 @@ class AnnotatedPDFOverlayProvider: NSObject, PDFPageOverlayViewProvider {
     weak var canvasVM: CanvasViewModel?
 
     private var overlays: [Int: PageDrawingCanvas] = [:]
+    private(set) var zoom: CGFloat = 1.0
 
     init(noteVM: NoteViewModel?, canvasVM: CanvasViewModel?) {
         self.noteVM = noteVM
@@ -807,12 +854,24 @@ class AnnotatedPDFOverlayProvider: NSObject, PDFPageOverlayViewProvider {
         if let existing = overlays[pageIndex] {
             existing.noteVM = noteVM
             existing.canvasVM = canvasVM
+            existing.currentZoom = zoom
             return existing
         }
 
         let canvas = PageDrawingCanvas(pageIndex: pageIndex, noteVM: noteVM, canvasVM: canvasVM)
+        canvas.currentZoom = zoom
         overlays[pageIndex] = canvas
         return canvas
+    }
+
+    /// Propagates the current PDFView zoom to every overlay so their cursors
+    /// track the on-screen stroke size.
+    func setZoom(_ newZoom: CGFloat) {
+        guard abs(zoom - newZoom) > 0.001 else { return }
+        zoom = newZoom
+        for canvas in overlays.values {
+            canvas.currentZoom = newZoom
+        }
     }
 
     func clearCache() {
@@ -823,6 +882,15 @@ class AnnotatedPDFOverlayProvider: NSObject, PDFPageOverlayViewProvider {
         for canvas in overlays.values {
             canvas.needsDisplay = true
             canvas.invalidateCursor()
+        }
+    }
+
+    /// Re-assert the tool cursor on whichever overlay currently holds the
+    /// pointer. Call this at the tail of updateNSView, after PDFKit has finished
+    /// any relayout that could have reset the cursor to the default arrow.
+    func reassertCursors() {
+        for canvas in overlays.values {
+            canvas.applyCursorIfInside()
         }
     }
 }
@@ -872,10 +940,11 @@ struct PDFAnnotationCanvasView: NSViewRepresentable {
         // Reflect user-driven zoom (pinch / trackpad) back into the label. The
         // epsilon guard prevents a feedback loop with our own programmatic
         // scaleFactor assignments in updateNSView.
-        NotificationCenter.default.addObserver(forName: .PDFViewScaleChanged, object: pdfView, queue: .main) { _ in
+        NotificationCenter.default.addObserver(forName: .PDFViewScaleChanged, object: pdfView, queue: .main) { [weak provider = context.coordinator.provider] _ in
             if abs(pdfView.scaleFactor - zoomScale) > 0.001 {
                 zoomScale = pdfView.scaleFactor
             }
+            provider?.setZoom(pdfView.scaleFactor)
         }
 
         return pdfView
@@ -903,12 +972,19 @@ struct PDFAnnotationCanvasView: NSViewRepresentable {
         if abs(nsView.scaleFactor - zoomScale) > 0.001 {
             nsView.scaleFactor = zoomScale
         }
+        context.coordinator.provider.setZoom(nsView.scaleFactor)
 
         if let doc = nsView.document,
            selectedPageIndex >= 0 && selectedPageIndex < doc.pageCount,
            let page = doc.page(at: selectedPageIndex),
            nsView.currentPage != page {
             nsView.go(to: page)
+        }
+
+        // After all PDFKit relayout above, re-assert the drawing cursor in case
+        // it was reset to the default arrow while the pointer stayed still.
+        DispatchQueue.main.async {
+            context.coordinator.provider.reassertCursors()
         }
     }
     
@@ -928,49 +1004,3 @@ struct PDFAnnotationCanvasView: NSViewRepresentable {
     }
 }
 
-extension NSImage {
-    static func createCircleCursorImage(color: NSColor, diameter: CGFloat) -> NSImage {
-        let size = max(4.0, diameter)
-        let imageSize = NSSize(width: size + 4, height: size + 4)
-        let image = NSImage(size: imageSize)
-        
-        image.lockFocus()
-        let rect = NSRect(x: 2, y: 2, width: size, height: size)
-        let path = NSBezierPath(ovalIn: rect)
-        
-        color.setFill()
-        path.fill()
-        
-        NSColor.white.setStroke()
-        path.lineWidth = 1.0
-        path.stroke()
-        
-        let outerRect = rect.insetBy(dx: -0.5, dy: -0.5)
-        let outerPath = NSBezierPath(ovalIn: outerRect)
-        NSColor.black.withAlphaComponent(0.25).setStroke()
-        outerPath.lineWidth = 0.5
-        outerPath.stroke()
-        
-        image.unlockFocus()
-        return image
-    }
-    
-    static func createEraserCursorImage() -> NSImage {
-        let diameter: CGFloat = 36.0
-        let imageSize = NSSize(width: diameter + 4, height: diameter + 4)
-        let image = NSImage(size: imageSize)
-        
-        image.lockFocus()
-        let rect = NSRect(x: 2, y: 2, width: diameter, height: diameter)
-        let path = NSBezierPath(ovalIn: rect)
-        
-        NSColor.secondaryLabelColor.withAlphaComponent(0.6).setStroke()
-        path.lineWidth = 1.0
-        let pattern: [CGFloat] = [4.0, 4.0]
-        path.setLineDash(pattern, count: 2, phase: 0.0)
-        path.stroke()
-        
-        image.unlockFocus()
-        return image
-    }
-}

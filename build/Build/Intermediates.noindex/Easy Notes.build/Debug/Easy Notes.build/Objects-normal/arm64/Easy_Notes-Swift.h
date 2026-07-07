@@ -459,6 +459,12 @@ SWIFT_CLASS("_TtC10Easy_Notes17PageDrawingCanvas")
 /// (scrolling, resizing, etc.). Participating in resetCursorRects/addCursorRect
 /// instead keeps our cursor correctly prioritized alongside PDFKit’s own.
 - (void)resetCursorRects;
+/// A <code>.cursorUpdate</code> tracking area is the authoritative cursor mechanism
+/// here: it takes precedence over PDFView’s own cursor handling and is
+/// re-consulted by AppKit whenever the pointer moves within the view, so the
+/// tool cursor survives PDFKit re-laying out the page after a stroke saves.
+- (void)updateTrackingAreas;
+- (void)cursorUpdate:(NSEvent * _Nonnull)event;
 - (NSView * _Nullable)hitTest:(NSPoint)point SWIFT_WARN_UNUSED_RESULT;
 - (void)drawRect:(NSRect)dirtyRect;
 - (void)mouseDown:(NSEvent * _Nonnull)event;
