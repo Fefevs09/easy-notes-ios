@@ -2,59 +2,261 @@ import SwiftUI
 import PDFKit
 import CoreData
 
+/// Deserializes a stroke's "x1,y1;x2,y2;..." point string back into CGPoints.
+func deserializeStrokePoints(_ str: String) -> [CGPoint] {
+    var points: [CGPoint] = []
+    let pairs = str.components(separatedBy: ";")
+    for pair in pairs {
+        let coords = pair.components(separatedBy: ",")
+        if coords.count == 2,
+           let x = Double(coords[0]),
+           let y = Double(coords[1]) {
+            points.append(CGPoint(x: x, y: y))
+        }
+    }
+    return points
+}
+
+/// Draws every Stroke belonging to `note` on `pageIndex` directly into `context`,
+/// in the page's own mediaBox coordinate space. Used both by AnnotatedPDFPage's
+/// draw override and directly by NoteViewModel.exportPDF (which cannot rely on
+/// PDFKit actually instantiating AnnotatedPDFPage for pages parsed from data).
+func renderStrokes(for note: Note, pageIndex: Int, into context: CGContext) {
+    let strokesSet = note.strokes as? Set<Stroke> ?? []
+    let pageStrokes = strokesSet.filter { $0.pageIndex == Int16(pageIndex) }
+    guard !pageStrokes.isEmpty else { return }
+
+    context.saveGState()
+    for stroke in pageStrokes {
+        guard let pointsStr = stroke.points as String? else { continue }
+        let points = deserializeStrokePoints(pointsStr)
+        guard !points.isEmpty else { continue }
+
+        context.setLineWidth(CGFloat(stroke.width))
+        context.setLineCap(.round)
+        context.setLineJoin(.round)
+
+        let color = NSColor(hex: stroke.color) ?? NSColor.black
+        context.setStrokeColor(color.cgColor)
+
+        context.beginPath()
+        context.move(to: points[0])
+        for i in 1..<points.count {
+            context.addLine(to: points[i])
+        }
+        context.strokePath()
+    }
+    context.restoreGState()
+}
+
+// MARK: - Shape geometry
+
+/// Normalized rect from two opposite corners (handles any drag direction).
+func normalizedRect(_ a: CGPoint, _ b: CGPoint) -> CGRect {
+    CGRect(x: min(a.x, b.x), y: min(a.y, b.y),
+           width: abs(b.x - a.x), height: abs(b.y - a.y))
+}
+
+private func interpolate(_ a: CGPoint, _ b: CGPoint, steps: Int) -> [CGPoint] {
+    guard steps > 0 else { return [a, b] }
+    var pts: [CGPoint] = []
+    for i in 0...steps {
+        let t = CGFloat(i) / CGFloat(steps)
+        pts.append(CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t))
+    }
+    return pts
+}
+
+/// Builds the stroke/fill path for a shape from its control points. Used both
+/// on screen (via the overlay's CGContext) and in PDF export.
+func makeShapeCGPath(kind: ShapeKind, points: [CGPoint]) -> CGPath {
+    let path = CGMutablePath()
+    guard points.count >= 2 else {
+        if let p = points.first { path.move(to: p); path.addLine(to: p) }
+        return path
+    }
+    let a = points[0], b = points[1]
+    switch kind {
+    case .line:
+        path.move(to: a); path.addLine(to: b)
+    case .arrow:
+        path.move(to: a); path.addLine(to: b)
+        let angle = atan2(b.y - a.y, b.x - a.x)
+        let head = min(max(12.0, hypot(b.x - a.x, b.y - a.y) * 0.25), 26.0)
+        let left = CGPoint(x: b.x - head * cos(angle - .pi / 7),
+                           y: b.y - head * sin(angle - .pi / 7))
+        let right = CGPoint(x: b.x - head * cos(angle + .pi / 7),
+                            y: b.y - head * sin(angle + .pi / 7))
+        path.move(to: b); path.addLine(to: left)
+        path.move(to: b); path.addLine(to: right)
+    case .rectangle:
+        path.addRect(normalizedRect(a, b))
+    case .ellipse:
+        path.addEllipse(in: normalizedRect(a, b))
+    case .polygon:
+        path.move(to: points[0])
+        for p in points.dropFirst() { path.addLine(to: p) }
+        path.closeSubpath()
+    case .arc, .functionPlot:
+        path.move(to: a); path.addLine(to: b)
+    }
+    return path
+}
+
+/// Whether a shape encloses an area (fillable, and hit-testable by containment).
+func shapeIsClosed(_ kind: ShapeKind) -> Bool {
+    switch kind {
+    case .rectangle, .ellipse, .polygon: return true
+    case .line, .arrow, .arc, .functionPlot: return false
+    }
+}
+
+/// A polyline approximation of the shape outline, for proximity hit-testing.
+func sampleShapePolyline(kind: ShapeKind, points: [CGPoint]) -> [CGPoint] {
+    guard points.count >= 2 else { return points }
+    let a = points[0], b = points[1]
+    switch kind {
+    case .line, .arrow, .arc, .functionPlot:
+        return interpolate(a, b, steps: 24)
+    case .rectangle:
+        let r = normalizedRect(a, b)
+        let corners = [CGPoint(x: r.minX, y: r.minY), CGPoint(x: r.maxX, y: r.minY),
+                       CGPoint(x: r.maxX, y: r.maxY), CGPoint(x: r.minX, y: r.maxY)]
+        var pts: [CGPoint] = []
+        for i in 0..<4 { pts += interpolate(corners[i], corners[(i + 1) % 4], steps: 10) }
+        return pts
+    case .ellipse:
+        let r = normalizedRect(a, b)
+        var pts: [CGPoint] = []
+        for i in 0..<48 {
+            let t = CGFloat(i) / 48.0 * 2.0 * .pi
+            pts.append(CGPoint(x: r.midX + r.width / 2 * cos(t),
+                               y: r.midY + r.height / 2 * sin(t)))
+        }
+        return pts
+    case .polygon:
+        var pts: [CGPoint] = []
+        for i in 0..<points.count {
+            pts += interpolate(points[i], points[(i + 1) % points.count], steps: 10)
+        }
+        return pts
+    }
+}
+
+/// Draws every ShapeObject belonging to `note` on `pageIndex` into `context`.
+/// Mirrors `renderStrokes`: works both for on-screen overlays and PDF export.
+func renderShapes(for note: Note, pageIndex: Int, into context: CGContext) {
+    let shapesSet = note.shapes as? Set<ShapeObject> ?? []
+    let pageShapes = shapesSet.filter { $0.pageIndex == Int16(pageIndex) }
+    guard !pageShapes.isEmpty else { return }
+
+    context.saveGState()
+    for shape in pageShapes {
+        let kind = ShapeKind(rawValue: shape.kind) ?? .line
+        let pts = deserializeStrokePoints(shape.points)
+        guard pts.count >= 2 else { continue }
+        let path = makeShapeCGPath(kind: kind, points: pts)
+
+        if shapeIsClosed(kind), let fillHex = shape.fillColor,
+           let fill = NSColor(hex: fillHex) {
+            context.addPath(path)
+            context.setFillColor(fill.cgColor)
+            context.fillPath()
+        }
+
+        context.addPath(path)
+        context.setLineWidth(CGFloat(shape.strokeWidth))
+        context.setLineCap(.round)
+        context.setLineJoin(.round)
+        context.setStrokeColor((NSColor(hex: shape.strokeColor) ?? .black).cgColor)
+        context.strokePath()
+    }
+    context.restoreGState()
+}
+
+/// Draws the cartesian grid / graph paper for `note` across `bounds`. `bounds`
+/// is the overlay's bounds on screen and the page mediaBox during export — both
+/// share the shape/stroke coordinate space, so the same code serves both.
+func renderGrid(for note: Note, in bounds: CGRect, into context: CGContext) {
+    guard let style = GridStyle(rawValue: note.gridStyle), style != .none else { return }
+    let spacing = CGFloat(max(4.0, note.gridSpacing))
+    let ox = CGFloat(note.gridOriginX), oy = CGFloat(note.gridOriginY)
+
+    // First grid line at or after the left/bottom edge, phase-aligned to origin.
+    func firstLine(min: CGFloat, origin: CGFloat) -> CGFloat {
+        origin + ceil((min - origin) / spacing) * spacing
+    }
+
+    context.saveGState()
+    let minor = NSColor.systemBlue.withAlphaComponent(0.16).cgColor
+    let axis = NSColor.systemBlue.withAlphaComponent(0.45).cgColor
+
+    if style == .dots {
+        context.setFillColor(minor)
+        var y = firstLine(min: bounds.minY, origin: oy)
+        while y <= bounds.maxY {
+            var x = firstLine(min: bounds.minX, origin: ox)
+            while x <= bounds.maxX {
+                context.fillEllipse(in: CGRect(x: x - 1, y: y - 1, width: 2, height: 2))
+                x += spacing
+            }
+            y += spacing
+        }
+        context.restoreGState()
+        return
+    }
+
+    context.setLineWidth(0.5)
+    context.setStrokeColor(minor)
+
+    // Horizontal lines (both `lines` and `grid`).
+    var y = firstLine(min: bounds.minY, origin: oy)
+    while y <= bounds.maxY {
+        context.move(to: CGPoint(x: bounds.minX, y: y))
+        context.addLine(to: CGPoint(x: bounds.maxX, y: y))
+        y += spacing
+    }
+    // Vertical lines (`grid` only — `lines` is ruled-notebook style).
+    if style == .grid {
+        var x = firstLine(min: bounds.minX, origin: ox)
+        while x <= bounds.maxX {
+            context.move(to: CGPoint(x: x, y: bounds.minY))
+            context.addLine(to: CGPoint(x: x, y: bounds.maxY))
+            x += spacing
+        }
+    }
+    context.strokePath()
+
+    // Emphasize the cartesian axes for the full quadrille.
+    if style == .grid {
+        context.setLineWidth(1.0)
+        context.setStrokeColor(axis)
+        if oy >= bounds.minY && oy <= bounds.maxY {
+            context.move(to: CGPoint(x: bounds.minX, y: oy))
+            context.addLine(to: CGPoint(x: bounds.maxX, y: oy))
+        }
+        if ox >= bounds.minX && ox <= bounds.maxX {
+            context.move(to: CGPoint(x: ox, y: bounds.minY))
+            context.addLine(to: CGPoint(x: ox, y: bounds.maxY))
+        }
+        context.strokePath()
+    }
+    context.restoreGState()
+}
+
 class AnnotatedPDFPage: PDFPage {
-    weak var noteVM: NoteViewModel?
-    weak var canvasVM: CanvasViewModel?
+    weak var note: Note?
 
     override func draw(with box: PDFDisplayBox, to context: CGContext) {
         super.draw(with: box, to: context)
 
         guard let doc = self.document,
-              let noteVM = noteVM,
-              let note = noteVM.selectedNote else { return }
+              let note = note else { return }
 
         let pageIndex = doc.index(for: self)
-
-        let strokesSet = note.strokes as? Set<Stroke> ?? []
-        let pageStrokes = strokesSet.filter { $0.pageIndex == Int16(pageIndex) }
-
-        context.saveGState()
-
-        // Render existing strokes
-        for stroke in pageStrokes {
-            guard let pointsStr = stroke.points as String? else { continue }
-            let points = deserializePoints(pointsStr)
-            guard !points.isEmpty else { continue }
-
-            context.setLineWidth(CGFloat(stroke.width))
-            context.setLineCap(.round)
-            context.setLineJoin(.round)
-
-            let color = NSColor(hex: stroke.color) ?? NSColor.black
-            context.setStrokeColor(color.cgColor)
-
-            context.beginPath()
-            context.move(to: points[0])
-            for i in 1..<points.count {
-                context.addLine(to: points[i])
-            }
-            context.strokePath()
-        }
-        context.restoreGState()
-    }
-
-    private func deserializePoints(_ str: String) -> [CGPoint] {
-        var points: [CGPoint] = []
-        let pairs = str.components(separatedBy: ";")
-        for pair in pairs {
-            let coords = pair.components(separatedBy: ",")
-            if coords.count == 2,
-               let x = Double(coords[0]),
-               let y = Double(coords[1]) {
-                points.append(CGPoint(x: x, y: y))
-            }
-        }
-        return points
+        renderGrid(for: note, in: self.bounds(for: box), into: context)
+        renderShapes(for: note, pageIndex: pageIndex, into: context)
+        renderStrokes(for: note, pageIndex: pageIndex, into: context)
     }
 }
 
@@ -74,7 +276,18 @@ class PageDrawingCanvas: NSView {
     weak var canvasVM: CanvasViewModel?
 
     private var activePoints: [CGPoint] = []
-    private var trackingArea: NSTrackingArea?
+
+    // Shape drawing preview (while dragging out a new shape).
+    private var activeShapeStart: CGPoint?
+    private var activeShapePoints: [CGPoint] = []
+
+    // Selection / editing of an existing shape.
+    private var draggingShape: ShapeObject?
+    private var draggingPoints: [CGPoint] = []
+    private var dragHandleIndex: Int?   // nil => translate whole shape
+    private var lastDragPoint: CGPoint = .zero
+    private let handleRadius: CGFloat = 6.0
+    private let hitThreshold: CGFloat = 12.0
 
     init(pageIndex: Int, noteVM: NoteViewModel?, canvasVM: CanvasViewModel?) {
         self.pageIndex = pageIndex
@@ -86,41 +299,30 @@ class PageDrawingCanvas: NSView {
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
+    
+    /// PDFView/NSScrollView manage their own cursor via this same declarative
+    /// cursor-rect system; registering our cursor imperatively via NSCursor.set()
+    /// would get silently overridden any time AppKit recomputes cursor rects
+    /// (scrolling, resizing, etc.). Participating in resetCursorRects/addCursorRect
+    /// instead keeps our cursor correctly prioritized alongside PDFKit's own.
+    override func resetCursorRects() {
+        super.resetCursorRects()
 
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        if let existing = trackingArea {
-            removeTrackingArea(existing)
-        }
-        
-        let options: NSTrackingArea.Options = [
-            .mouseMoved,
-            .cursorUpdate,
-            .activeInActiveApp,
-            .inVisibleRect,
-            .enabledDuringMouseDrag
-        ]
-        
-        let newArea = NSTrackingArea(
-            rect: self.bounds,
-            options: options,
-            owner: self,
-            userInfo: nil
-        )
-        addTrackingArea(newArea)
-        trackingArea = newArea
-    }
-
-    override func cursorUpdate(with event: NSEvent) {
-        applyCursor()
-    }
-
-    private func applyCursor() {
         guard let canvasVM = canvasVM, canvasVM.isDrawingMode else {
-            NSCursor.arrow.set()
+            addCursorRect(bounds, cursor: .arrow)
             return
         }
-        
+
+        // Shape drawing uses a crosshair; the select tool uses the arrow.
+        if canvasVM.activeTool == .select {
+            addCursorRect(bounds, cursor: .arrow)
+            return
+        }
+        if canvasVM.activeTool == .shape {
+            addCursorRect(bounds, cursor: .crosshair)
+            return
+        }
+
         let cursorImage: NSImage
         if canvasVM.activeTool == .eraser {
             cursorImage = NSImage.createEraserCursorImage()
@@ -130,11 +332,11 @@ class PageDrawingCanvas: NSView {
                 diameter: canvasVM.strokeWidth
             )
         }
-        
+
         let hotSpot = NSPoint(x: cursorImage.size.width / 2, y: cursorImage.size.height / 2)
-        NSCursor(image: cursorImage, hotSpot: hotSpot).set()
+        addCursorRect(bounds, cursor: NSCursor(image: cursorImage, hotSpot: hotSpot))
     }
-    
+
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard let canvasVM = canvasVM, canvasVM.isDrawingMode else {
             return nil
@@ -142,19 +344,33 @@ class PageDrawingCanvas: NSView {
         return super.hitTest(point)
     }
 
+    /// Call whenever the conditions resetCursorRects() depends on change
+    /// (drawing mode toggle, active tool, color, width) so AppKit rebuilds
+    /// the cursor rect with the up-to-date cursor.
+    ///
+    /// Also defensively re-enables cursor rects: PDFView/NSScrollView disable
+    /// them for the duration of a mouse-down gesture (to avoid flicker while
+    /// panning) and re-enable them once *they* see the matching mouseUp. Since
+    /// this view consumes mouseDown/mouseDragged/mouseUp entirely while
+    /// drawing (never forwarding to super), that mouseUp never reaches
+    /// PDFView, so cursor rects would otherwise stay disabled for the rest of
+    /// the session after the very first stroke.
     func invalidateCursor() {
-       guard let window = window else { return }
-       let mouseLocInWindow = window.mouseLocationOutsideOfEventStream
-       let localPoint = convert(mouseLocInWindow, from: nil)
-       if bounds.contains(localPoint) {
-           applyCursor()
-       }
+        window?.enableCursorRects()
+        window?.invalidateCursorRects(for: self)
     }
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
 
         guard let note = noteVM?.selectedNote else { return }
+
+        // Bottom layers (grid + persisted shapes) via the shared CGContext path.
+        if let cg = NSGraphicsContext.current?.cgContext {
+            renderGrid(for: note, in: bounds, into: cg)
+            renderShapes(for: note, pageIndex: pageIndex, into: cg)
+        }
+
         let strokesSet = note.strokes as? Set<Stroke> ?? []
         let pageStrokes = strokesSet.filter { $0.pageIndex == Int16(pageIndex) }
 
@@ -196,6 +412,61 @@ class PageDrawingCanvas: NSView {
             }
             path.stroke()
         }
+
+        guard let cg = NSGraphicsContext.current?.cgContext,
+              let canvasVM = canvasVM, canvasVM.isDrawingMode else { return }
+
+        // Live preview of the shape currently being dragged out.
+        if canvasVM.activeTool == .shape, activeShapePoints.count >= 2 {
+            let kind = canvasVM.activeShapeKind
+            let previewPath = makeShapeCGPath(kind: kind, points: activeShapePoints)
+            cg.saveGState()
+            cg.addPath(previewPath)
+            cg.setLineWidth(canvasVM.strokeWidth)
+            cg.setLineCap(.round)
+            cg.setLineJoin(.round)
+            cg.setStrokeColor(NSColor(canvasVM.strokeColor).withAlphaComponent(0.9).cgColor)
+            cg.strokePath()
+            cg.restoreGState()
+        }
+
+        // Selection handles for the selected shape on this page.
+        if canvasVM.activeTool == .select,
+           let selID = canvasVM.selectedShapeID,
+           let shape = shapeForID(selID), shape.pageIndex == Int16(pageIndex) {
+            let pts = draggingShape === shape ? draggingPoints
+                                              : deserializeStrokePoints(shape.points)
+            drawSelection(for: ShapeKind(rawValue: shape.kind) ?? .line,
+                          points: pts, in: cg)
+        }
+    }
+
+    private func drawSelection(for kind: ShapeKind, points: [CGPoint], in cg: CGContext) {
+        guard points.count >= 2 else { return }
+        cg.saveGState()
+        // Dashed outline around the shape.
+        cg.addPath(makeShapeCGPath(kind: kind, points: points))
+        cg.setLineWidth(1.0)
+        cg.setLineDash(phase: 0, lengths: [4, 3])
+        cg.setStrokeColor(NSColor.controlAccentColor.cgColor)
+        cg.strokePath()
+        cg.setLineDash(phase: 0, lengths: [])
+        // Square handles at each control point.
+        for p in points {
+            let r = CGRect(x: p.x - handleRadius, y: p.y - handleRadius,
+                           width: handleRadius * 2, height: handleRadius * 2)
+            cg.setFillColor(NSColor.white.cgColor)
+            cg.fill(r)
+            cg.setStrokeColor(NSColor.controlAccentColor.cgColor)
+            cg.setLineWidth(1.0)
+            cg.stroke(r)
+        }
+        cg.restoreGState()
+    }
+
+    private func shapeForID(_ id: UUID) -> ShapeObject? {
+        let shapesSet = noteVM?.selectedNote?.shapes as? Set<ShapeObject> ?? []
+        return shapesSet.first { $0.id == id }
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -203,18 +474,25 @@ class PageDrawingCanvas: NSView {
             super.mouseDown(with: event)
             return
         }
-        
-        applyCursor()
 
         let point = self.convert(event.locationInWindow, from: nil)
 
-        if canvasVM.activeTool == .eraser {
-            eraseStrokeAt(point)
-        } else {
+        switch canvasVM.activeTool {
+        case .eraser:
+            eraseAt(point)
+        case .shape:
+            activeShapeStart = point
+            activeShapePoints = [point, point]
+            needsDisplay = true
+        case .select:
+            beginSelection(at: point)
+        default:
             activePoints = [point]
             canvasVM.activeStroke = CanvasViewModel.ActiveStroke(pageIndex: pageIndex, points: activePoints)
             needsDisplay = true
         }
+
+        invalidateCursor()
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -223,19 +501,27 @@ class PageDrawingCanvas: NSView {
             return
         }
 
-        applyCursor()
-        
         let point = self.convert(event.locationInWindow, from: nil)
 
-        if canvasVM.activeTool == .eraser {
-            eraseStrokeAt(point)
-        } else {
+        switch canvasVM.activeTool {
+        case .eraser:
+            eraseAt(point)
+        case .shape:
+            if let start = activeShapeStart {
+                activeShapePoints = [start, point]
+                needsDisplay = true
+            }
+        case .select:
+            updateSelectionDrag(to: point)
+        default:
             if let active = canvasVM.activeStroke, active.pageIndex == pageIndex {
                 activePoints.append(point)
                 canvasVM.activeStroke = CanvasViewModel.ActiveStroke(pageIndex: pageIndex, points: activePoints)
                 needsDisplay = true
             }
         }
+
+        invalidateCursor()
     }
 
     override func mouseUp(with event: NSEvent) {
@@ -244,15 +530,149 @@ class PageDrawingCanvas: NSView {
             return
         }
 
-        applyCursor()
-        
-        if canvasVM.activeTool != .eraser, !activePoints.isEmpty {
-            saveActiveStroke()
+        switch canvasVM.activeTool {
+        case .eraser:
+            break
+        case .shape:
+            saveActiveShape()
+            activeShapeStart = nil
+            activeShapePoints.removeAll()
+        case .select:
+            endSelectionDrag()
+        default:
+            if !activePoints.isEmpty { saveActiveStroke() }
+            activePoints.removeAll()
+            canvasVM.activeStroke = nil
         }
 
-        activePoints.removeAll()
-        canvasVM.activeStroke = nil
         needsDisplay = true
+        invalidateCursor()
+    }
+
+    // MARK: Shape creation
+
+    private func saveActiveShape() {
+        guard let note = noteVM?.selectedNote,
+              let moc = note.managedObjectContext,
+              let canvasVM = canvasVM,
+              activeShapePoints.count >= 2 else { return }
+
+        // Ignore accidental taps that produced no real drag.
+        let a = activeShapePoints[0], b = activeShapePoints[1]
+        if hypot(b.x - a.x, b.y - a.y) < 3.0 { return }
+
+        let shape = ShapeObject(context: moc)
+        shape.id = UUID()
+        shape.kind = canvasVM.activeShapeKind.rawValue
+        shape.points = serializePoints(activeShapePoints)
+        shape.strokeWidth = Float(canvasVM.strokeWidth)
+        shape.strokeColor = NSColor(canvasVM.strokeColor).hexString
+        shape.fillColor = canvasVM.shapeFillEnabled
+            ? NSColor(canvasVM.strokeColor).withAlphaComponent(0.2).hexString : nil
+        shape.createdAt = Date()
+        shape.note = note
+        shape.pageIndex = Int16(pageIndex)
+
+        do {
+            try moc.save()
+            noteVM?.loadNotes()
+        } catch {
+            Swift.print("Failed to save shape: \(error)")
+        }
+    }
+
+    // MARK: Selection / editing
+
+    private func beginSelection(at point: CGPoint) {
+        guard let canvasVM = canvasVM else { return }
+        draggingShape = nil
+        dragHandleIndex = nil
+        lastDragPoint = point
+
+        // First, if a shape is already selected, test its handles.
+        if let selID = canvasVM.selectedShapeID, let shape = shapeForID(selID),
+           shape.pageIndex == Int16(pageIndex) {
+            let pts = deserializeStrokePoints(shape.points)
+            if let idx = handleIndex(near: point, in: pts) {
+                draggingShape = shape
+                draggingPoints = pts
+                dragHandleIndex = idx
+                return
+            }
+        }
+
+        // Otherwise hit-test shape bodies (topmost / most recent first).
+        if let shape = topmostShape(at: point) {
+            canvasVM.selectedShapeID = shape.id
+            draggingShape = shape
+            draggingPoints = deserializeStrokePoints(shape.points)
+            dragHandleIndex = nil // move whole shape
+        } else {
+            canvasVM.selectedShapeID = nil
+        }
+        needsDisplay = true
+    }
+
+    private func updateSelectionDrag(to point: CGPoint) {
+        guard let shape = draggingShape else { return }
+        let dx = point.x - lastDragPoint.x
+        let dy = point.y - lastDragPoint.y
+        lastDragPoint = point
+
+        if let idx = dragHandleIndex, idx < draggingPoints.count {
+            draggingPoints[idx] = point
+        } else {
+            draggingPoints = draggingPoints.map { CGPoint(x: $0.x + dx, y: $0.y + dy) }
+        }
+        shape.points = serializePoints(draggingPoints)
+        needsDisplay = true
+    }
+
+    private func endSelectionDrag() {
+        guard let shape = draggingShape,
+              let moc = shape.managedObjectContext else {
+            draggingShape = nil
+            return
+        }
+        shape.points = serializePoints(draggingPoints)
+        do {
+            try moc.save()
+            noteVM?.loadNotes()
+        } catch {
+            Swift.print("Failed to save shape edit: \(error)")
+        }
+        draggingShape = nil
+        dragHandleIndex = nil
+    }
+
+    private func handleIndex(near point: CGPoint, in pts: [CGPoint]) -> Int? {
+        for (i, p) in pts.enumerated() {
+            if hypot(p.x - point.x, p.y - point.y) <= handleRadius + 2 { return i }
+        }
+        return nil
+    }
+
+    private func topmostShape(at point: CGPoint) -> ShapeObject? {
+        let shapesSet = noteVM?.selectedNote?.shapes as? Set<ShapeObject> ?? []
+        let pageShapes = shapesSet
+            .filter { $0.pageIndex == Int16(pageIndex) }
+            .sorted { $0.createdAt > $1.createdAt } // most recent on top
+
+        for shape in pageShapes {
+            let kind = ShapeKind(rawValue: shape.kind) ?? .line
+            let pts = deserializeStrokePoints(shape.points)
+            guard pts.count >= 2 else { continue }
+
+            if shapeIsClosed(kind), let fillHex = shape.fillColor, fillHex.isEmpty == false {
+                let path = makeShapeCGPath(kind: kind, points: pts)
+                if path.contains(point) { return shape }
+            }
+            let outline = sampleShapePolyline(kind: kind, points: pts)
+            for p in outline where hypot(p.x - point.x, p.y - point.y) < hitThreshold {
+                return shape
+            }
+        }
+        return nil
     }
 
     private func saveActiveStroke() {
@@ -281,14 +701,15 @@ class PageDrawingCanvas: NSView {
         }
     }
 
-    private func eraseStrokeAt(_ point: CGPoint) {
+    private func eraseAt(_ point: CGPoint) {
         guard let note = noteVM?.selectedNote,
               let moc = note.managedObjectContext else { return }
 
+        var objectToErase: NSManagedObject? = nil
+
+        // Freehand strokes.
         let strokesSet = note.strokes as? Set<Stroke> ?? []
         let pageStrokes = strokesSet.filter { $0.pageIndex == Int16(pageIndex) }
-
-        var strokeToErase: Stroke? = nil
         for stroke in pageStrokes {
             guard let pointsStr = stroke.points as String? else { continue }
             let strokePoints = deserializePoints(pointsStr)
@@ -296,29 +717,40 @@ class PageDrawingCanvas: NSView {
 
             if let bbox = getBoundingBox(for: strokePoints) {
                 let expandedBox = bbox.insetBy(dx: -18.0, dy: -18.0)
-                if !expandedBox.contains(point) {
-                    continue
-                }
+                if !expandedBox.contains(point) { continue }
             }
 
-            for p in strokePoints {
-                let dist = sqrt(pow(p.x - point.x, 2) + pow(p.y - point.y, 2))
-                if dist < 18.0 {
-                    strokeToErase = stroke
+            for p in strokePoints where sqrt(pow(p.x - point.x, 2) + pow(p.y - point.y, 2)) < 18.0 {
+                objectToErase = stroke
+                break
+            }
+            if objectToErase != nil { break }
+        }
+
+        // Geometric shapes (only if no stroke was hit).
+        if objectToErase == nil {
+            let shapesSet = note.shapes as? Set<ShapeObject> ?? []
+            let pageShapes = shapesSet.filter { $0.pageIndex == Int16(pageIndex) }
+            for shape in pageShapes {
+                let kind = ShapeKind(rawValue: shape.kind) ?? .line
+                let pts = deserializeStrokePoints(shape.points)
+                guard pts.count >= 2 else { continue }
+                let outline = sampleShapePolyline(kind: kind, points: pts)
+                if outline.contains(where: { sqrt(pow($0.x - point.x, 2) + pow($0.y - point.y, 2)) < 18.0 }) {
+                    objectToErase = shape
                     break
                 }
             }
-            if strokeToErase != nil { break }
         }
 
-        if let stroke = strokeToErase {
-            moc.delete(stroke)
+        if let obj = objectToErase {
+            moc.delete(obj)
             do {
                 try moc.save()
                 noteVM?.loadNotes()
                 needsDisplay = true
             } catch {
-                Swift.print("Failed to delete stroke: \(error)")
+                Swift.print("Failed to delete object: \(error)")
             }
         }
     }
@@ -417,7 +849,12 @@ struct PDFAnnotationCanvasView: NSViewRepresentable {
     func makeNSView(context: Context) -> NSPDFAnnotationView {
         let pdfView = NSPDFAnnotationView()
         pdfView.displayMode = .singlePageContinuous
-        pdfView.autoScales = true
+        // Zoom is driven purely by `zoomScale` (1.0 == 100%). autoScales is left
+        // off so PDFKit never overwrites the user's zoom with a transient
+        // fit-to-view factor computed during early layout.
+        pdfView.autoScales = false
+        pdfView.minScaleFactor = 0.25
+        pdfView.maxScaleFactor = 4.0
         pdfView.displayBox = .mediaBox
         pdfView.backgroundColor = NSColor.windowBackgroundColor
 
@@ -432,8 +869,11 @@ struct PDFAnnotationCanvasView: NSViewRepresentable {
             }
         }
 
+        // Reflect user-driven zoom (pinch / trackpad) back into the label. The
+        // epsilon guard prevents a feedback loop with our own programmatic
+        // scaleFactor assignments in updateNSView.
         NotificationCenter.default.addObserver(forName: .PDFViewScaleChanged, object: pdfView, queue: .main) { _ in
-            if pdfView.scaleFactor != zoomScale {
+            if abs(pdfView.scaleFactor - zoomScale) > 0.001 {
                 zoomScale = pdfView.scaleFactor
             }
         }
@@ -454,17 +894,14 @@ struct PDFAnnotationCanvasView: NSViewRepresentable {
         context.coordinator.provider.canvasVM = canvasVM
         context.coordinator.provider.redrawAll()
 
-        if zoomScale == 1.0 {
-            if !nsView.autoScales {
-                nsView.autoScales = true
-            }
-        } else {
-            if nsView.autoScales {
-                nsView.autoScales = false
-            }
-            if nsView.scaleFactor != zoomScale {
-                nsView.scaleFactor = zoomScale
-            }
+        // Apply the numeric zoom directly. Keep autoScales off and only touch
+        // scaleFactor when it actually differs, so we don't fight PDFKit or the
+        // scale-changed observer.
+        if nsView.autoScales {
+            nsView.autoScales = false
+        }
+        if abs(nsView.scaleFactor - zoomScale) > 0.001 {
+            nsView.scaleFactor = zoomScale
         }
 
         if let doc = nsView.document,

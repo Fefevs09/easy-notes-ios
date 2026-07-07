@@ -5,187 +5,12 @@ import PDFKit
 class NoteViewModelTests: XCTestCase {
     var inMemoryContext: NSManagedObjectContext!
     var viewModel: NoteViewModel!
-    
+
     override func setUp() {
         super.setUp()
-        
-        // Setup in-memory NSPersistentContainer using the same programmatic model from CoreDataStack
-        let model = NSManagedObjectModel()
-        
-        // Entity definitions matching CoreDataStack.swift exactly
-        let notebookEntity = NSEntityDescription()
-        notebookEntity.name = "Notebook"
-        notebookEntity.managedObjectClassName = "Notebook"
-        
-        let notebookIdAttribute = NSAttributeDescription()
-        notebookIdAttribute.name = "id"
-        notebookIdAttribute.attributeType = .UUIDAttributeType
-        notebookIdAttribute.isOptional = false
-        
-        let notebookNameAttribute = NSAttributeDescription()
-        notebookNameAttribute.name = "name"
-        notebookNameAttribute.attributeType = .stringAttributeType
-        notebookNameAttribute.isOptional = false
-        notebookEntity.properties = [notebookIdAttribute, notebookNameAttribute]
-        
-        let noteEntity = NSEntityDescription()
-        noteEntity.name = "Note"
-        noteEntity.managedObjectClassName = "Note"
-        
-        let noteIdAttribute = NSAttributeDescription()
-        noteIdAttribute.name = "id"
-        noteIdAttribute.attributeType = .UUIDAttributeType
-        noteIdAttribute.isOptional = false
-        
-        let noteTitleAttribute = NSAttributeDescription()
-        noteTitleAttribute.name = "title"
-        noteTitleAttribute.attributeType = .stringAttributeType
-        noteTitleAttribute.isOptional = false
-        
-        let noteContentAttribute = NSAttributeDescription()
-        noteContentAttribute.name = "content"
-        noteContentAttribute.attributeType = .stringAttributeType
-        noteContentAttribute.isOptional = false
-        
-        let noteCreatedAtAttribute = NSAttributeDescription()
-        noteCreatedAtAttribute.name = "createdAt"
-        noteCreatedAtAttribute.attributeType = .dateAttributeType
-        noteCreatedAtAttribute.isOptional = false
-        
-        let noteUpdatedAtAttribute = NSAttributeDescription()
-        noteUpdatedAtAttribute.name = "updatedAt"
-        noteUpdatedAtAttribute.attributeType = .dateAttributeType
-        noteUpdatedAtAttribute.isOptional = false
-        
-        let noteIsTrashedAttribute = NSAttributeDescription()
-        noteIsTrashedAttribute.name = "isTrashed"
-        noteIsTrashedAttribute.attributeType = .booleanAttributeType
-        noteIsTrashedAttribute.isOptional = false
-        noteIsTrashedAttribute.defaultValue = false
-        
-        let notePdfDataAttribute = NSAttributeDescription()
-        notePdfDataAttribute.name = "pdfData"
-        notePdfDataAttribute.attributeType = .binaryDataAttributeType
-        notePdfDataAttribute.isOptional = true
-        
-        let notePageCountAttribute = NSAttributeDescription()
-        notePageCountAttribute.name = "pageCount"
-        notePageCountAttribute.attributeType = .integer16AttributeType
-        notePageCountAttribute.isOptional = false
-        notePageCountAttribute.defaultValue = 1
-        
-        noteEntity.properties = [
-            noteIdAttribute,
-            noteTitleAttribute,
-            noteContentAttribute,
-            noteCreatedAtAttribute,
-            noteUpdatedAtAttribute,
-            noteIsTrashedAttribute,
-            notePdfDataAttribute,
-            notePageCountAttribute
-        ]
-        
-        let strokeEntity = NSEntityDescription()
-        strokeEntity.name = "Stroke"
-        strokeEntity.managedObjectClassName = "Stroke"
-        
-        let strokeIdAttribute = NSAttributeDescription()
-        strokeIdAttribute.name = "id"
-        strokeIdAttribute.attributeType = .UUIDAttributeType
-        strokeIdAttribute.isOptional = false
-        
-        let strokePointsAttribute = NSAttributeDescription()
-        strokePointsAttribute.name = "points"
-        strokePointsAttribute.attributeType = .stringAttributeType
-        strokePointsAttribute.isOptional = false
-        
-        let strokeColorAttribute = NSAttributeDescription()
-        strokeColorAttribute.name = "color"
-        strokeColorAttribute.attributeType = .stringAttributeType
-        strokeColorAttribute.isOptional = false
-        
-        let strokeWidthAttribute = NSAttributeDescription()
-        strokeWidthAttribute.name = "width"
-        strokeWidthAttribute.attributeType = .floatAttributeType
-        strokeWidthAttribute.isOptional = false
-        
-        let strokeCreatedAtAttribute = NSAttributeDescription()
-        strokeCreatedAtAttribute.name = "createdAt"
-        strokeCreatedAtAttribute.attributeType = .dateAttributeType
-        strokeCreatedAtAttribute.isOptional = false
-        
-        let strokePageIndexAttribute = NSAttributeDescription()
-        strokePageIndexAttribute.name = "pageIndex"
-        strokePageIndexAttribute.attributeType = .integer16AttributeType
-        strokePageIndexAttribute.isOptional = false
-        strokePageIndexAttribute.defaultValue = 0
-        
-        strokeEntity.properties = [
-            strokeIdAttribute,
-            strokePointsAttribute,
-            strokeColorAttribute,
-            strokeWidthAttribute,
-            strokeCreatedAtAttribute,
-            strokePageIndexAttribute
-        ]
-        
-        // Relationships
-        let notebookToNotesRelation = NSRelationshipDescription()
-        notebookToNotesRelation.name = "notes"
-        notebookToNotesRelation.destinationEntity = noteEntity
-        notebookToNotesRelation.minCount = 0
-        notebookToNotesRelation.maxCount = 0
-        notebookToNotesRelation.deleteRule = .cascadeDeleteRule
-        
-        let noteToNotebookRelation = NSRelationshipDescription()
-        noteToNotebookRelation.name = "notebook"
-        noteToNotebookRelation.destinationEntity = notebookEntity
-        noteToNotebookRelation.minCount = 0
-        noteToNotebookRelation.maxCount = 1
-        noteToNotebookRelation.deleteRule = .nullifyDeleteRule
-        
-        notebookToNotesRelation.inverseRelationship = noteToNotebookRelation
-        noteToNotebookRelation.inverseRelationship = notebookToNotesRelation
-        
-        let noteToStrokesRelation = NSRelationshipDescription()
-        noteToStrokesRelation.name = "strokes"
-        noteToStrokesRelation.destinationEntity = strokeEntity
-        noteToStrokesRelation.minCount = 0
-        noteToStrokesRelation.maxCount = 0
-        noteToStrokesRelation.deleteRule = .cascadeDeleteRule
-        
-        let strokeToNoteRelation = NSRelationshipDescription()
-        strokeToNoteRelation.name = "note"
-        strokeToNoteRelation.destinationEntity = noteEntity
-        strokeToNoteRelation.minCount = 0
-        strokeToNoteRelation.maxCount = 1
-        strokeToNoteRelation.deleteRule = .nullifyDeleteRule
-        
-        noteToStrokesRelation.inverseRelationship = strokeToNoteRelation
-        strokeToNoteRelation.inverseRelationship = noteToStrokesRelation
-        
-        notebookEntity.properties.append(notebookToNotesRelation)
-        noteEntity.properties.append(noteToNotebookRelation)
-        noteEntity.properties.append(noteToStrokesRelation)
-        strokeEntity.properties.append(strokeToNoteRelation)
-        
-        model.entities = [notebookEntity, noteEntity, strokeEntity]
-        
-        let container = NSPersistentContainer(name: "EasyNotesModelTests", managedObjectModel: model)
-        let description = NSPersistentStoreDescription()
-        description.type = NSInMemoryStoreType
-        container.persistentStoreDescriptions = [description]
-        
-        container.loadPersistentStores { (storeDescription, error) in
-            if let error = error {
-                fatalError("Failed to load in-memory store: \(error)")
-            }
-        }
-        
-        inMemoryContext = container.viewContext
-        viewModel = NoteViewModel(context: inMemoryContext)
+        (viewModel, inMemoryContext) = TestSupport.makeInMemoryViewModel()
     }
-    
+
     override func tearDown() {
         viewModel = nil
         inMemoryContext = nil
@@ -351,5 +176,64 @@ class NoteViewModelTests: XCTestCase {
         XCTAssertEqual(strokes.count, 1)
         XCTAssertEqual(strokes.first?.pageIndex, 2)
         XCTAssertEqual(strokes.first?.points, "10.0,20.0;30.0,40.0")
+    }
+
+    func testUndoRemovesMostRecentObjectAcrossStrokesAndShapes() {
+        // Given a note with an older stroke and a newer shape
+        viewModel.addNote(title: "Undo Test", content: "")
+        guard let note = viewModel.notes.first else {
+            XCTFail("Failed to add note")
+            return
+        }
+        viewModel.selectedNote = note
+
+        let stroke = Stroke(context: inMemoryContext)
+        stroke.id = UUID()
+        stroke.points = "0.0,0.0;10.0,10.0"
+        stroke.width = 3.0
+        stroke.color = "#000000"
+        stroke.createdAt = Date(timeIntervalSince1970: 1000)
+        stroke.pageIndex = 0
+        stroke.note = note
+
+        let shape = ShapeObject(context: inMemoryContext)
+        shape.id = UUID()
+        shape.kind = "rectangle"
+        shape.points = "0.0,0.0;20.0,20.0"
+        shape.strokeColor = "#000000"
+        shape.strokeWidth = 3.0
+        shape.createdAt = Date(timeIntervalSince1970: 2000) // newer
+        shape.pageIndex = 0
+        shape.note = note
+        try? inMemoryContext.save()
+        viewModel.loadNotes()
+
+        // When: undo once -> removes the newer shape, keeps the stroke
+        viewModel.undoLastObject()
+
+        // Then
+        XCTAssertEqual((note.shapes as? Set<ShapeObject> ?? []).count, 0)
+        XCTAssertEqual((note.strokes as? Set<Stroke> ?? []).count, 1)
+
+        // When: undo again -> removes the stroke
+        viewModel.undoLastObject()
+        XCTAssertEqual(viewModel.drawnObjectCount(for: note), 0)
+    }
+
+    func testSetGridStylePersistsAndCentersOrigin() {
+        // Given a blank note (single generated PDF page)
+        viewModel.addNote(title: "Grid Note", content: "")
+        guard let note = viewModel.notes.first else {
+            XCTFail("Failed to add note")
+            return
+        }
+
+        // When enabling the full grid
+        viewModel.setGridStyle(.grid, for: note)
+
+        // Then the style persists and the origin is centered on the page
+        XCTAssertEqual(note.gridStyle, "grid")
+        XCTAssertGreaterThan(note.gridOriginX, 0)
+        XCTAssertGreaterThan(note.gridOriginY, 0)
     }
 }

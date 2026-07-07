@@ -93,7 +93,7 @@ struct ContentView: View {
                                         .cornerRadius(4)
                                 }
                                 .buttonStyle(PlainButtonStyle())
-                                .help("Ajustar Zoom")
+                                .help("Redefinir para 100%")
                             }
                             .padding(8)
                             .background(Color(NSColor.windowBackgroundColor).opacity(0.9))

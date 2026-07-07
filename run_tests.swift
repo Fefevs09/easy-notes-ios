@@ -19,7 +19,10 @@ struct TestRunner {
         let observer = TestObserver()
         XCTestObservationCenter.shared.addTestObserver(observer)
 
-        let suite = XCTestSuite(forTestCaseClass: NoteViewModelTests.self)
+        let suite = XCTestSuite(name: "EasyNotesTests")
+        suite.addTest(XCTestSuite(forTestCaseClass: NoteViewModelTests.self))
+        suite.addTest(XCTestSuite(forTestCaseClass: PDFExportTests.self))
+        suite.addTest(XCTestSuite(forTestCaseClass: ShapeObjectTests.self))
         print("🏃 Running \(suite.testCaseCount) tests...")
         suite.run()
         let run = suite.testRun

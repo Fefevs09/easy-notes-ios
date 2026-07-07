@@ -11,6 +11,12 @@ public enum FilterType: Hashable {
     case trash
 }
 
+
+enum PDFExportError: Error, Equatable {
+    case documentUnavailable
+    case contextCreationFailed
+}
+
 public enum SortOption: String, CaseIterable, Identifiable {
     case dateModifiedDescending = "Date modified (recent first)"
     case dateModifiedAscending = "Date modified (oldest first)"
@@ -345,6 +351,7 @@ public class NoteViewModel: ObservableObject {
         pdfDoc.delegate = pdfDelegate
         
         let blankPage = AnnotatedPDFPage()
+        blankPage.note = note
         let size = pdfDoc.pageCount > 0 ? (pdfDoc.page(at: 0)?.bounds(for: .mediaBox).size ?? CGSize(width: 612, height: 792)) : CGSize(width: 612, height: 792)
         blankPage.setBounds(CGRect(origin: .zero, size: size), for: .mediaBox)
         pdfDoc.insert(blankPage, at: pdfDoc.pageCount)
@@ -392,10 +399,40 @@ public class NoteViewModel: ObservableObject {
             doc = PDFDocument(data: blankData) ?? PDFDocument()
         }
         doc.delegate = pdfDelegate
-        
+        for pageIndex in 0..<doc.pageCount {
+            (doc.page(at: pageIndex) as? AnnotatedPDFPage)?.note = note
+        }
+
         cachedPDFDocument = doc
         cachedPDFDocumentNoteId = note.id
         return doc
+    }
+
+    // MARK: - PDF Export
+    public func exportPDF(for note: Note, to url: URL) throws {
+        guard let sourceDoc = getPDFDocument(for: note), sourceDoc.pageCount > 0 else {
+            throw PDFExportError.documentUnavailable
+        }
+
+        let outputData = NSMutableData()
+        guard let consumer = CGDataConsumer(data: outputData as CFMutableData),
+              let context = CGContext(consumer: consumer, mediaBox: nil, nil) else {
+            throw PDFExportError.contextCreationFailed
+        }
+
+        for pageIndex in 0..<sourceDoc.pageCount {
+            guard let page = sourceDoc.page(at: pageIndex) else { continue }
+            var mediaBox = page.bounds(for: .mediaBox)
+            context.beginPage(mediaBox: &mediaBox)
+            page.draw(with: .mediaBox, to: context)
+            renderGrid(for: note, in: mediaBox, into: context)
+            renderShapes(for: note, pageIndex: pageIndex, into: context)
+            renderStrokes(for: note, pageIndex: pageIndex, into: context)
+            context.endPage()
+        }
+        context.closePDF()
+
+        try (outputData as Data).write(to: url, options: .atomic)
     }
     
     public func emptyTrash() {
@@ -413,11 +450,48 @@ public class NoteViewModel: ObservableObject {
         }
     }
     
-    public func undoLastStroke() {
+    /// Sets the cartesian grid style for a note. When enabling a real grid for
+    /// the first time, centers the plane origin on the first page so the axes
+    /// land in a natural place.
+    public func setGridStyle(_ style: GridStyle, for note: Note) {
+        note.gridStyle = style.rawValue
+        if style != .none, note.gridOriginX == 0, note.gridOriginY == 0,
+           let doc = getPDFDocument(for: note), let page = doc.page(at: 0) {
+            let b = page.bounds(for: .mediaBox)
+            note.gridOriginX = Float(b.midX)
+            note.gridOriginY = Float(b.midY)
+        }
+        save()
+        loadNotes()
+    }
+
+    /// Number of undoable drawing objects (strokes + shapes) on a note.
+    public func drawnObjectCount(for note: Note?) -> Int {
+        guard let note = note else { return 0 }
+        let strokes = note.strokes as? Set<Stroke> ?? []
+        let shapes = note.shapes as? Set<ShapeObject> ?? []
+        return strokes.count + shapes.count
+    }
+
+    /// Removes the most recently created drawing object, whether it is a
+    /// freehand stroke or a geometric shape.
+    public func undoLastObject() {
         guard let note = selectedNote else { return }
-        let strokesSet = note.strokes as? Set<Stroke> ?? []
-        if let latest = strokesSet.max(by: { $0.createdAt < $1.createdAt }) {
-            context.delete(latest)
+        let latestStroke = (note.strokes as? Set<Stroke> ?? [])
+            .max(by: { $0.createdAt < $1.createdAt })
+        let latestShape = (note.shapes as? Set<ShapeObject> ?? [])
+            .max(by: { $0.createdAt < $1.createdAt })
+
+        let target: NSManagedObject?
+        switch (latestStroke, latestShape) {
+        case let (s?, sh?): target = s.createdAt >= sh.createdAt ? s : sh
+        case let (s?, nil): target = s
+        case let (nil, sh?): target = sh
+        default: target = nil
+        }
+
+        if let target = target {
+            context.delete(target)
             save()
             loadNotes()
         }

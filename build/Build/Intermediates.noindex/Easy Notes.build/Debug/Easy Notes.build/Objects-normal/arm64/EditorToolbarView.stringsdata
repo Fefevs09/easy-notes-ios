@@ -1,0 +1,96 @@
+{
+  "source": "/Users/felipevieira/Developer/Easy Notes/Easy Notes/Views/Toolbar/EditorToolbarView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Leitura (cursor padrão)",
+        "location": {
+          "startingColumn": 15,
+          "startingLine": 181
+        }
+      },
+      {
+        "comment": "",
+        "key": "Formas geométricas",
+        "location": {
+          "startingColumn": 15,
+          "startingLine": 210
+        }
+      },
+      {
+        "comment": "",
+        "key": "Grade / papel milimetrado",
+        "location": {
+          "startingColumn": 15,
+          "startingLine": 242
+        }
+      },
+      {
+        "comment": "",
+        "key": "Preencher forma",
+        "location": {
+          "startingColumn": 31,
+          "startingLine": 77
+        }
+      },
+      {
+        "comment": "",
+        "key": "",
+        "location": {
+          "startingColumn": 37,
+          "startingLine": 42
+        }
+      },
+      {
+        "comment": "",
+        "key": "Customizar Cor",
+        "location": {
+          "startingColumn": 35,
+          "startingLine": 45
+        }
+      },
+      {
+        "comment": "",
+        "key": "%lldpt",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 57
+        }
+      },
+      {
+        "comment": "",
+        "key": "Desfazer último objeto",
+        "location": {
+          "startingColumn": 23,
+          "startingLine": 99
+        }
+      },
+      {
+        "comment": "",
+        "key": "Exportar Nota como PDF",
+        "location": {
+          "startingColumn": 23,
+          "startingLine": 114
+        }
+      },
+      {
+        "comment": "",
+        "key": "Ocultar miniaturas",
+        "location": {
+          "startingColumn": 39,
+          "startingLine": 129
+        }
+      },
+      {
+        "comment": "",
+        "key": "Mostrar miniaturas",
+        "location": {
+          "startingColumn": 62,
+          "startingLine": 129
+        }
+      }
+    ]
+  },
+  "version": 1
+}

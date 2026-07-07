@@ -75,7 +75,31 @@ public class CoreDataStack {
         notePageCountAttribute.attributeType = .integer16AttributeType
         notePageCountAttribute.isOptional = false
         notePageCountAttribute.defaultValue = 1
-        
+
+        let noteGridStyleAttribute = NSAttributeDescription()
+        noteGridStyleAttribute.name = "gridStyle"
+        noteGridStyleAttribute.attributeType = .stringAttributeType
+        noteGridStyleAttribute.isOptional = false
+        noteGridStyleAttribute.defaultValue = "none"
+
+        let noteGridSpacingAttribute = NSAttributeDescription()
+        noteGridSpacingAttribute.name = "gridSpacing"
+        noteGridSpacingAttribute.attributeType = .floatAttributeType
+        noteGridSpacingAttribute.isOptional = false
+        noteGridSpacingAttribute.defaultValue = 24.0
+
+        let noteGridOriginXAttribute = NSAttributeDescription()
+        noteGridOriginXAttribute.name = "gridOriginX"
+        noteGridOriginXAttribute.attributeType = .floatAttributeType
+        noteGridOriginXAttribute.isOptional = false
+        noteGridOriginXAttribute.defaultValue = 0.0
+
+        let noteGridOriginYAttribute = NSAttributeDescription()
+        noteGridOriginYAttribute.name = "gridOriginY"
+        noteGridOriginYAttribute.attributeType = .floatAttributeType
+        noteGridOriginYAttribute.isOptional = false
+        noteGridOriginYAttribute.defaultValue = 0.0
+
         noteEntity.properties = [
             noteIdAttribute,
             noteTitleAttribute,
@@ -84,7 +108,11 @@ public class CoreDataStack {
             noteUpdatedAtAttribute,
             noteIsTrashedAttribute,
             notePdfDataAttribute,
-            notePageCountAttribute
+            notePageCountAttribute,
+            noteGridStyleAttribute,
+            noteGridSpacingAttribute,
+            noteGridOriginXAttribute,
+            noteGridOriginYAttribute
         ]
         
         // --- 3. Entity: Stroke ---
@@ -131,7 +159,64 @@ public class CoreDataStack {
             strokeCreatedAtAttribute,
             strokePageIndexAttribute
         ]
-        
+
+        // --- 3b. Entity: ShapeObject ---
+        let shapeEntity = NSEntityDescription()
+        shapeEntity.name = "ShapeObject"
+        shapeEntity.managedObjectClassName = "ShapeObject"
+
+        let shapeIdAttribute = NSAttributeDescription()
+        shapeIdAttribute.name = "id"
+        shapeIdAttribute.attributeType = .UUIDAttributeType
+        shapeIdAttribute.isOptional = false
+
+        let shapeKindAttribute = NSAttributeDescription()
+        shapeKindAttribute.name = "kind"
+        shapeKindAttribute.attributeType = .stringAttributeType
+        shapeKindAttribute.isOptional = false
+
+        let shapePointsAttribute = NSAttributeDescription()
+        shapePointsAttribute.name = "points"
+        shapePointsAttribute.attributeType = .stringAttributeType
+        shapePointsAttribute.isOptional = false
+
+        let shapeStrokeColorAttribute = NSAttributeDescription()
+        shapeStrokeColorAttribute.name = "strokeColor"
+        shapeStrokeColorAttribute.attributeType = .stringAttributeType
+        shapeStrokeColorAttribute.isOptional = false
+
+        let shapeStrokeWidthAttribute = NSAttributeDescription()
+        shapeStrokeWidthAttribute.name = "strokeWidth"
+        shapeStrokeWidthAttribute.attributeType = .floatAttributeType
+        shapeStrokeWidthAttribute.isOptional = false
+
+        let shapeFillColorAttribute = NSAttributeDescription()
+        shapeFillColorAttribute.name = "fillColor"
+        shapeFillColorAttribute.attributeType = .stringAttributeType
+        shapeFillColorAttribute.isOptional = true
+
+        let shapeCreatedAtAttribute = NSAttributeDescription()
+        shapeCreatedAtAttribute.name = "createdAt"
+        shapeCreatedAtAttribute.attributeType = .dateAttributeType
+        shapeCreatedAtAttribute.isOptional = false
+
+        let shapePageIndexAttribute = NSAttributeDescription()
+        shapePageIndexAttribute.name = "pageIndex"
+        shapePageIndexAttribute.attributeType = .integer16AttributeType
+        shapePageIndexAttribute.isOptional = false
+        shapePageIndexAttribute.defaultValue = 0
+
+        shapeEntity.properties = [
+            shapeIdAttribute,
+            shapeKindAttribute,
+            shapePointsAttribute,
+            shapeStrokeColorAttribute,
+            shapeStrokeWidthAttribute,
+            shapeFillColorAttribute,
+            shapeCreatedAtAttribute,
+            shapePageIndexAttribute
+        ]
+
         // --- 4. Relationships ---
         // Notebook -> Note (One-to-Many, cascade delete)
         let notebookToNotesRelation = NSRelationshipDescription()
@@ -170,15 +255,36 @@ public class CoreDataStack {
         
         noteToStrokesRelation.inverseRelationship = strokeToNoteRelation
         strokeToNoteRelation.inverseRelationship = noteToStrokesRelation
-        
+
+        // Note -> ShapeObject (One-to-Many, cascade delete)
+        let noteToShapesRelation = NSRelationshipDescription()
+        noteToShapesRelation.name = "shapes"
+        noteToShapesRelation.destinationEntity = shapeEntity
+        noteToShapesRelation.minCount = 0
+        noteToShapesRelation.maxCount = 0 // unlimited
+        noteToShapesRelation.deleteRule = .cascadeDeleteRule
+
+        // ShapeObject -> Note (Many-to-One, nullify delete)
+        let shapeToNoteRelation = NSRelationshipDescription()
+        shapeToNoteRelation.name = "note"
+        shapeToNoteRelation.destinationEntity = noteEntity
+        shapeToNoteRelation.minCount = 0
+        shapeToNoteRelation.maxCount = 1
+        shapeToNoteRelation.deleteRule = .nullifyDeleteRule
+
+        noteToShapesRelation.inverseRelationship = shapeToNoteRelation
+        shapeToNoteRelation.inverseRelationship = noteToShapesRelation
+
         // Add relationships to entities
         notebookEntity.properties.append(notebookToNotesRelation)
         noteEntity.properties.append(noteToNotebookRelation)
         noteEntity.properties.append(noteToStrokesRelation)
+        noteEntity.properties.append(noteToShapesRelation)
         strokeEntity.properties.append(strokeToNoteRelation)
-        
+        shapeEntity.properties.append(shapeToNoteRelation)
+
         // --- 5. Configure Model ---
-        model.entities = [notebookEntity, noteEntity, strokeEntity]
+        model.entities = [notebookEntity, noteEntity, strokeEntity, shapeEntity]
         
         container = NSPersistentContainer(name: "EasyNotesModel", managedObjectModel: model)
         if let description = container.persistentStoreDescriptions.first {
