@@ -29,30 +29,33 @@ struct EditorToolbarView: View {
             Divider().frame(height: 18)
             
             // MARK: - Drawing Configuration (Color, Preset, Size)
-            if canvasVM.isDrawingMode && canvasVM.activeTool != .eraser && canvasVM.activeTool != .select {
+            if canvasVM.isDrawingMode && canvasVM.activeTool != .select {
                 HStack(spacing: 12) {
-                    // Quick Preset Colors
-                    HStack(spacing: 5) {
-                        presetColorButton(color: .black)
-                        presetColorButton(color: .blue)
-                        presetColorButton(color: .red)
-                        presetColorButton(color: .green)
-                        
-                        // Custom Color Picker
-                        ColorPicker("", selection: $canvasVM.strokeColor)
-                            .labelsHidden()
-                            .scaleEffect(0.85)
-                            .help("Customizar Cor")
+                    // Quick Preset Colors (eraser has no color of its own)
+                    if canvasVM.activeTool != .eraser {
+                        HStack(spacing: 5) {
+                            presetColorButton(color: .black)
+                            presetColorButton(color: .blue)
+                            presetColorButton(color: .red)
+                            presetColorButton(color: .green)
+
+                            // Custom Color Picker
+                            ColorPicker("", selection: $canvasVM.strokeColor)
+                                .labelsHidden()
+                                .scaleEffect(0.85)
+                                .help("Customizar Cor")
+                        }
+
+                        Divider().frame(height: 18)
                     }
-                    
-                    Divider().frame(height: 18)
-                    
-                    // Width Control
+
+                    // Width / Eraser Size Control
                     HStack(spacing: 6) {
-                        Image(systemName: "line.horizontal.3.decrease")
+                        Image(systemName: canvasVM.activeTool == .eraser ? "eraser" : "line.horizontal.3.decrease")
                             .font(.caption)
                             .foregroundColor(.secondary)
-                        Slider(value: $canvasVM.strokeWidth, in: 1...16)
+                        Slider(value: $canvasVM.strokeWidth,
+                               in: canvasVM.activeTool == .eraser ? 4...40 : 1...16)
                             .frame(width: 70)
                         Text("\(Int(canvasVM.strokeWidth))pt")
                             .font(.caption)

@@ -1,6 +1,11 @@
 import SwiftUI
 import CoreData
+import PDFKit
 import UniformTypeIdentifiers
+
+/// Rasterized first-page covers keyed by note id + freshness. Shared across all
+/// cards so re-renders (every `loadNotes()`) reuse work instead of re-rasterizing.
+private let noteCoverCache = NSCache<NSString, NSImage>()
 
 struct NotesView: View {
     @EnvironmentObject var viewModel: NoteViewModel
@@ -344,11 +349,21 @@ struct NoteCardView: View {
 // MARK: - Note Thumbnail View Renderer
 struct NoteThumbnailView: View {
     let note: Note
-    
+    @State private var cover: NSImage?
+
     var body: some View {
         GeometryReader { geometry in
             ZStack(alignment: .topLeading) {
-                
+
+                // First PDF page as the card cover (white while it renders)
+                if let cover = cover {
+                    Image(nsImage: cover)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .clipped()
+                }
+
                 // If there's text, show a small preview block
                 if !note.content.isEmpty {
                     Text(note.content)
@@ -392,29 +407,29 @@ struct NoteThumbnailView: View {
                     }
                     .background(Color.clear)
                 }
-                
-                // If PDF note, display a subtle PDF badge
-                if note.pdfData != nil && note.strokes?.count == 0 && note.content.isEmpty {
-                    VStack {
-                        Spacer()
-                        HStack {
-                            Spacer()
-                            Image(systemName: "doc.text.fill")
-                                .font(.system(size: 28))
-                                .foregroundColor(.red.opacity(0.7))
-                            Spacer()
-                        }
-                        Text("PDF Document")
-                            .font(.system(size: 9, weight: .medium, design: .rounded))
-                            .foregroundColor(.secondary)
-                        Spacer()
-                    }
-                    .padding(8)
-                }
             }
         }
+        .task(id: note.updatedAt) {
+            cover = Self.coverImage(for: note)
+        }
     }
-    
+
+    // MARK: - First-page cover renderer
+    private static func coverImage(for note: Note) -> NSImage? {
+        let key = "\(note.id.uuidString)-\(note.updatedAt.timeIntervalSince1970)" as NSString
+        if let cached = noteCoverCache.object(forKey: key) {
+            return cached
+        }
+        guard let data = note.pdfData,
+              let page = PDFDocument(data: data)?.page(at: 0) else {
+            return nil
+        }
+        // 2× the card's ~150-point width keeps the raster crisp on Retina.
+        let image = page.thumbnail(of: CGSize(width: 300, height: 405), for: .mediaBox)
+        noteCoverCache.setObject(image, forKey: key)
+        return image
+    }
+
     // MARK: - Point Deserializer
     private func deserializePoints(_ string: String) -> [CGPoint] {
         guard !string.isEmpty else { return [] }

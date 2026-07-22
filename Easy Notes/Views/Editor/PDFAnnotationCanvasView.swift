@@ -286,9 +286,9 @@ func toolCursor(for canvasVM: CanvasViewModel, zoom: CGFloat) -> NSCursor? {
     case .shape:
         cursorImage = NSImage.createShapeCrosshairImage()
     case .eraser:
-        // Erase footprint is a fixed 18pt radius in page space (see eraseAt);
-        // scale the visible ring to match the current zoom.
-        cursorImage = NSImage.createEraserCursorImage(footprint: 36.0 * zoom)
+        // Erase radius in page space is canvasVM.strokeWidth (see eraseAt);
+        // footprint is the diameter, scaled to match the current zoom.
+        cursorImage = NSImage.createEraserCursorImage(footprint: canvasVM.strokeWidth * 2 * zoom)
     default:
         // Brush ring matches the actual painted width: page points × zoom.
         cursorImage = NSImage.createBrushCursorImage(
@@ -845,6 +845,9 @@ class PageDrawingCanvas: NSView {
 
         var objectToErase: NSManagedObject? = nil
 
+        // Erase radius in page space, adjustable via the toolbar size slider.
+        let radius = canvasVM?.strokeWidth ?? 18.0
+
         // Freehand strokes.
         let strokesSet = note.strokes as? Set<Stroke> ?? []
         let pageStrokes = strokesSet.filter { $0.pageIndex == Int16(pageIndex) }
@@ -854,11 +857,11 @@ class PageDrawingCanvas: NSView {
             guard !strokePoints.isEmpty else { continue }
 
             if let bbox = getBoundingBox(for: strokePoints) {
-                let expandedBox = bbox.insetBy(dx: -18.0, dy: -18.0)
+                let expandedBox = bbox.insetBy(dx: -radius, dy: -radius)
                 if !expandedBox.contains(point) { continue }
             }
 
-            for p in strokePoints where sqrt(pow(p.x - point.x, 2) + pow(p.y - point.y, 2)) < 18.0 {
+            for p in strokePoints where sqrt(pow(p.x - point.x, 2) + pow(p.y - point.y, 2)) < radius {
                 objectToErase = stroke
                 break
             }
@@ -874,7 +877,7 @@ class PageDrawingCanvas: NSView {
                 let pts = deserializeStrokePoints(shape.points)
                 guard pts.count >= 2 else { continue }
                 let outline = sampleShapePolyline(kind: kind, points: pts)
-                if outline.contains(where: { sqrt(pow($0.x - point.x, 2) + pow($0.y - point.y, 2)) < 18.0 }) {
+                if outline.contains(where: { sqrt(pow($0.x - point.x, 2) + pow($0.y - point.y, 2)) < radius }) {
                     objectToErase = shape
                     break
                 }

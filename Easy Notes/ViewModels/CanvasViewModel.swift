@@ -113,7 +113,7 @@ public class CanvasViewModel: ObservableObject {
         .calligraphy: 5.0,
         .pencil: 2.0,
         .highlighter: 20.0,
-        .eraser: 15.0,
+        .eraser: 18.0,
         .shape: 3.0
     ]
 
@@ -130,11 +130,11 @@ public class CanvasViewModel: ObservableObject {
     }
     
     public func selectTool(_ tool: ToolType) {
-        // Save current configurations before switching (drawing tools only;
-        // eraser/select carry no color/width of their own).
-        if activeTool != .eraser && activeTool != .select {
+        // Save current configurations before switching (select carries no
+        // width/color of its own; eraser has a size but no color).
+        if activeTool != .select {
             toolWidths[activeTool] = strokeWidth
-            if activeTool != .highlighter {
+            if activeTool != .highlighter && activeTool != .eraser {
                 toolColors[activeTool] = strokeColor
             }
         }
