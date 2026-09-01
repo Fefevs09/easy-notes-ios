@@ -102,6 +102,10 @@ public class CanvasViewModel: ObservableObject {
     @Published public var strokeColor = Color.black
     @Published public var strokeWidth: CGFloat = 3.0
 
+    /// The alpha applied to any highlighter color so it reads as a translucent
+    /// marker overlay rather than an opaque stroke.
+    public static let highlighterOpacity: CGFloat = 0.3
+
     // Shape drawing / editing state
     @Published public var activeShapeKind: ShapeKind = .line
     @Published public var selectedShapeID: UUID?
@@ -121,7 +125,7 @@ public class CanvasViewModel: ObservableObject {
         .fountainPen: .black,
         .calligraphy: .blue,
         .pencil: .gray,
-        .highlighter: .yellow.opacity(0.3),
+        .highlighter: .yellow.opacity(CanvasViewModel.highlighterOpacity),
         .shape: .black
     ]
     

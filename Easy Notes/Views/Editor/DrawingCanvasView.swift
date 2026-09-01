@@ -318,3 +318,11 @@ extension NSColor {
         }
     }
 }
+
+// MARK: - Color Alpha Extension
+extension Color {
+    /// Returns this color with its alpha channel set (not multiplied) to `alpha`.
+    func withAlpha(_ alpha: CGFloat) -> Color {
+        Color(NSColor(self).withAlphaComponent(alpha))
+    }
+}

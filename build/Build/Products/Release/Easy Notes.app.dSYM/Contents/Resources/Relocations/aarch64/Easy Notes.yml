@@ -1,5 +1,0 @@
----
-triple:          'arm64-apple-darwin'
-binary-path:     '/Users/felipevieira/Developer/Easy Notes/build/Build/Products/Release/Easy Notes.app/Contents/MacOS/Easy Notes'
-relocations:     []
-...
