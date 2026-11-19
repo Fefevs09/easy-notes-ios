@@ -9,67 +9,38 @@ private let noteCoverCache = NSCache<NSString, NSImage>()
 
 struct NotesView: View {
     @EnvironmentObject var viewModel: NoteViewModel
-    
-    // Grid configuration
+
+    @AppStorage("easyNotes.libraryIsGridView") private var isGridView = true
+    @FocusState private var isSearchFocused: Bool
+
+    // 3-column adaptive grid
     private let columns = [
-        GridItem(.adaptive(minimum: 150, maximum: 200), spacing: 24)
+        GridItem(.adaptive(minimum: 220, maximum: 300), spacing: 20)
     ]
-    
+
     var body: some View {
-        ZStack(alignment: .bottomTrailing) {
+        VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    
-                    // MARK: - Sort Indicator & Options
-                    HStack(spacing: 4) {
-                        Menu {
-                            Picker("Ordenar por", selection: $viewModel.sortOption) {
-                                ForEach(SortOption.allCases) { option in
-                                    Text(option.rawValue).tag(option)
-                                }
-                            }
-                        } label: {
-                            HStack(spacing: 4) {
-                                Text(viewModel.sortOption.localizedName)
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
-                                    .foregroundColor(.secondary)
-                                
-                                Image(systemName: viewModel.sortOption.isAscending ? "arrow.up" : "arrow.down")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                        .menuStyle(.borderlessButton)
-                        
-                        Spacer()
+                    // MARK: - Editorial Header
+                    editorialHeader
+
+                    // MARK: - Search Bar & View Toggle
+                    searchAndToggleRow
+
+                    // MARK: - Quick-Filter Notebook Chips
+                    if viewModel.selectedFilter != .trash && !viewModel.notebooks.isEmpty {
+                        notebookChipsRow
                     }
-                    .padding(.horizontal, 32)
-                    .padding(.top, 8)
-                    
-                    // MARK: - Grid of Notes
+
+                    // MARK: - Section Header & Sort Menu
+                    sectionHeaderRow
+
+                    // MARK: - Notes Content (Empty / Grid / List)
                     if viewModel.notes.isEmpty {
-                        VStack(spacing: 16) {
-                            Spacer()
-                            Image(systemName: "doc.text.magnifyingglass")
-                                .font(.system(size: 48))
-                                .foregroundColor(.secondary.opacity(0.35))
-                            
-                            Text(emptyStateTitle())
-                                .font(.title3)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.secondary)
-                            
-                            Text(emptyStateSubtitle())
-                                .font(.subheadline)
-                                .foregroundColor(.secondary.opacity(0.7))
-                                .multilineTextAlignment(.center)
-                                .padding(.horizontal, 48)
-                            Spacer()
-                        }
-                        .frame(maxWidth: .infinity, minHeight: 300)
-                    } else {
-                        LazyVGrid(columns: columns, spacing: 28) {
+                        emptyStateView
+                    } else if isGridView {
+                        LazyVGrid(columns: columns, spacing: 20) {
                             ForEach(viewModel.notes, id: \.self) { note in
                                 Button(action: {
                                     withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
@@ -84,121 +55,421 @@ struct NotesView: View {
                                 }
                             }
                         }
-                        .padding(.horizontal, 32)
-                        .padding(.bottom, 80) // Leave space for FAB
-                    }
-                }
-                .padding(.top, 16)
-            }
-            .background(Color(NSColor.windowBackgroundColor).opacity(0.4))
-            
-            // MARK: - Floating Action Button (FAB)
-            if viewModel.selectedFilter != .trash {
-                Button(action: {
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                        viewModel.addNote()
-                    }
-                }) {
-                    Image(systemName: "pencil")
-                        .font(.system(size: 20, weight: .bold))
-                        .foregroundColor(Color(red: 0.91, green: 0.35, blue: 0.14))
-                        .frame(width: 56, height: 56)
-                        .background(Color.white)
-                        .cornerRadius(28)
-                        .shadow(color: .black.opacity(0.15), radius: 6, x: 0, y: 3)
-                }
-                .buttonStyle(.plain)
-                .padding(24)
-                .transition(.scale.combined(with: .opacity))
-            }
-        }
-        .safeAreaInset(edge: .top, spacing: 0) {
-            // MARK: - Header & Toolbar
-            VStack(spacing: 0) {
-                HStack(spacing: 16) {
-                    Text(headerTitle())
-                        .font(.system(size: 32, weight: .bold, design: .rounded))
-                        .foregroundColor(.primary)
-                    
-                    Spacer()
-                    
-                    // Search Bar
-                    HStack(spacing: 6) {
-                        Image(systemName: "magnifyingglass")
-                            .foregroundColor(.secondary)
-                            .font(.body)
-                        
-                        TextField("Search", text: $viewModel.searchQuery)
-                            .textFieldStyle(.plain)
-                            .font(.body)
-                        
-                        if !viewModel.searchQuery.isEmpty {
-                            Button(action: {
-                                viewModel.searchQuery = ""
-                            }) {
-                                Image(systemName: "xmark.circle.fill")
-                                    .foregroundColor(.secondary)
+                    } else {
+                        LazyVStack(spacing: 10) {
+                            ForEach(viewModel.notes, id: \.self) { note in
+                                Button(action: {
+                                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                        viewModel.selectedNote = note
+                                    }
+                                }) {
+                                    NoteListRowCardView(note: note)
+                                }
+                                .buttonStyle(.plain)
+                                .contextMenu {
+                                    contextMenuContent(for: note)
+                                }
                             }
-                            .buttonStyle(.plain)
                         }
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .frame(width: 220)
-                    .background(Color(NSColor.controlBackgroundColor).opacity(0.8))
-                    .cornerRadius(18)
-                    .shadow(color: .black.opacity(0.03), radius: 2, x: 0, y: 1)
-                    
-                    // Import PDF Button (Hidden in trash)
-                    if viewModel.selectedFilter != .trash {
-                        Button(action: {
-                            importPDFFile()
-                        }) {
-                            HStack(spacing: 6) {
-                                Image(systemName: "doc.badge.plus")
-                                Text("Import PDF")
-                                    .fontWeight(.medium)
-                            }
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 6)
-                            .background(Color(NSColor.controlBackgroundColor).opacity(0.8))
-                            .cornerRadius(18)
-                            .shadow(color: .black.opacity(0.03), radius: 2, x: 0, y: 1)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    
-                    // Empty Trash (Only in trash filter)
-                    if viewModel.selectedFilter == .trash && !viewModel.notes.isEmpty {
-                        Button(action: {
-                            viewModel.emptyTrash()
-                        }) {
-                            Text("Esvaziar Lixeira")
-                                .foregroundColor(.red)
-                                .fontWeight(.semibold)
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 6)
-                                .background(Color.red.opacity(0.08))
-                                .cornerRadius(18)
-                        }
-                        .buttonStyle(.plain)
                     }
                 }
                 .padding(.horizontal, 32)
-                .padding(.top, 52)
-                .padding(.bottom, 16)
-                
-                Divider()
+                .padding(.top, 36)
+                .padding(.bottom, 32)
             }
-            .background(Color(NSColor.windowBackgroundColor).opacity(0.95))
+            .background(PixelTheme.surface)
+
+            // MARK: - Subtle Bottom Status Footer
+            Rectangle()
+                .fill(PixelTheme.border)
+                .frame(height: 1)
+
+            HStack {
+                Text(statusCountText())
+                    .font(PixelTheme.uiFont(size: 11.5, weight: .medium))
+                    .foregroundColor(PixelTheme.muted)
+                    .monospacedDigit()
+
+                Spacer()
+
+                Text("Suas ideias ficam salvas automaticamente.")
+                    .font(PixelTheme.uiFont(size: 11.5))
+                    .foregroundColor(PixelTheme.muted)
+            }
+            .padding(.horizontal, 32)
+            .padding(.vertical, 10)
+            .background(PixelTheme.surface)
+        }
+        .background(PixelTheme.surface)
+    }
+
+    // MARK: - Editorial Header
+    private var editorialHeader: some View {
+        HStack(alignment: .bottom, spacing: 16) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("CADA IDEIA É UM COMEÇO")
+                    .studioSectionHeader()
+
+                Text(viewModel.selectedFilter == .all ? "Seu próximo grande rascunho." : headerTitle())
+                    .font(PixelTheme.displayFont(size: 26, weight: .bold))
+                    .foregroundColor(PixelTheme.ink)
+                    .tracking(-0.4)
+                    .lineLimit(2)
+            }
+
+            Spacer(minLength: 16)
+
+            if viewModel.selectedFilter != .trash {
+                HStack(spacing: 10) {
+                    Button(action: {
+                        importPDFFile()
+                    }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.down.doc")
+                                .font(.system(size: 12.5, weight: .medium))
+                            Text("Importar PDF")
+                                .font(PixelTheme.uiFont(size: 13, weight: .medium))
+                        }
+                        .foregroundColor(PixelTheme.ink)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 9)
+                        .background(
+                            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                .fill(PixelTheme.paper)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                .strokeBorder(PixelTheme.border, lineWidth: 1)
+                        )
+                        .shadow(color: Color.black.opacity(0.03), radius: 3, x: 0, y: 1)
+                    }
+                    .buttonStyle(.plain)
+
+                    Button(action: {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                            viewModel.addNote()
+                        }
+                    }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "plus")
+                                .font(.system(size: 12.5, weight: .bold))
+                            Text("Nova nota")
+                                .font(PixelTheme.uiFont(size: 13, weight: .semibold))
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 9)
+                        .background(
+                            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                .fill(PixelTheme.accent)
+                        )
+                        .shadow(color: PixelTheme.accent.opacity(0.25), radius: 6, x: 0, y: 2)
+                    }
+                    .buttonStyle(.plain)
+                }
+            } else if !viewModel.notes.isEmpty {
+                Button(action: {
+                    viewModel.emptyTrash()
+                }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "trash")
+                            .font(.system(size: 12.5, weight: .semibold))
+                        Text("Esvaziar Lixeira")
+                            .font(PixelTheme.uiFont(size: 13, weight: .semibold))
+                    }
+                    .foregroundColor(PixelTheme.danger)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 9)
+                    .background(
+                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            .fill(PixelTheme.dangerSoft)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            .strokeBorder(PixelTheme.danger.opacity(0.25), lineWidth: 1)
+                    )
+                }
+                .buttonStyle(.plain)
+            }
         }
     }
-    
-    // MARK: - Header & Empty States Helpers
+
+    // MARK: - Search & View Toggle Row
+    private var searchAndToggleRow: some View {
+        HStack(spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 13.5, weight: .medium))
+                    .foregroundColor(PixelTheme.muted)
+
+                TextField("Buscar por título...", text: $viewModel.searchQuery)
+                    .textFieldStyle(.plain)
+                    .font(PixelTheme.uiFont(size: 13.5))
+                    .foregroundColor(PixelTheme.ink)
+                    .focused($isSearchFocused)
+
+                if !viewModel.searchQuery.isEmpty {
+                    Button(action: {
+                        viewModel.searchQuery = ""
+                    }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 13))
+                            .foregroundColor(PixelTheme.muted)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                Text("⌘K")
+                    .font(PixelTheme.displayFont(size: 10.5, weight: .medium))
+                    .foregroundColor(PixelTheme.muted)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .fill(PixelTheme.surface)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .strokeBorder(PixelTheme.border, lineWidth: 1)
+                    )
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(PixelTheme.paper)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(isSearchFocused ? PixelTheme.accentBorder : PixelTheme.border, lineWidth: isSearchFocused ? 1.5 : 1)
+            )
+            .shadow(color: Color.black.opacity(0.025), radius: 3, x: 0, y: 1)
+
+            // Hidden shortcut button so ⌘K focuses search cleanly
+            Button("") {
+                isSearchFocused = true
+            }
+            .keyboardShortcut("k", modifiers: .command)
+            .frame(width: 0, height: 0)
+            .opacity(0)
+            .accessibilityHidden(true)
+
+            // Grid / List toggle pill
+            HStack(spacing: 2) {
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.16)) {
+                        isGridView = true
+                    }
+                }) {
+                    Image(systemName: "square.grid.2x2")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(isGridView ? PixelTheme.accent : PixelTheme.muted)
+                        .frame(width: 30, height: 28)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(isGridView ? PixelTheme.accentSoft : Color.clear)
+                        )
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Visualização em Grade")
+
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.16)) {
+                        isGridView = false
+                    }
+                }) {
+                    Image(systemName: "list.bullet")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(!isGridView ? PixelTheme.accent : PixelTheme.muted)
+                        .frame(width: 30, height: 28)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(!isGridView ? PixelTheme.accentSoft : Color.clear)
+                        )
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Visualização em Lista")
+            }
+            .padding(3)
+            .background(
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(PixelTheme.paper)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .strokeBorder(PixelTheme.border, lineWidth: 1)
+            )
+        }
+    }
+
+    // MARK: - Quick-Filter Notebook Chips
+    private var notebookChipsRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                if viewModel.selectedFilter != .all {
+                    Button(action: {
+                        withAnimation(.easeInOut(duration: 0.16)) {
+                            viewModel.selectedFilter = .all
+                        }
+                    }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "square.stack")
+                                .font(.system(size: 11.5, weight: .medium))
+                                .foregroundColor(PixelTheme.inkSecondary)
+                            Text("Todas")
+                                .font(PixelTheme.uiFont(size: 12.5, weight: .medium))
+                                .foregroundColor(PixelTheme.ink)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .background(
+                            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                .fill(PixelTheme.paper)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                .strokeBorder(PixelTheme.border, lineWidth: 1)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                ForEach(viewModel.notebooks, id: \.self) { notebook in
+                    let isActive = isNotebookActive(notebook)
+
+                    Button(action: {
+                        withAnimation(.easeInOut(duration: 0.16)) {
+                            viewModel.selectedFilter = .notebook(notebook)
+                        }
+                    }) {
+                        HStack(spacing: 7) {
+                            Image(systemName: "folder.fill")
+                                .font(.system(size: 11.5))
+                                .foregroundColor(PixelTheme.notebookColor(for: notebook.name))
+
+                            Text(notebook.name)
+                                .font(PixelTheme.uiFont(size: 12.5, weight: isActive ? .semibold : .medium))
+                                .foregroundColor(isActive ? PixelTheme.accent : PixelTheme.ink)
+                                .lineLimit(1)
+
+                            Text("\(notebook.activeNotesCount)")
+                                .font(PixelTheme.uiFont(size: 11.5, weight: .medium))
+                                .foregroundColor(isActive ? PixelTheme.accent.opacity(0.85) : PixelTheme.muted)
+                                .monospacedDigit()
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .background(
+                            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                .fill(isActive ? PixelTheme.accentSoft : PixelTheme.paper)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                .strokeBorder(isActive ? PixelTheme.accentBorder : PixelTheme.border, lineWidth: 1)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.vertical, 1)
+        }
+    }
+
+    // MARK: - Section Header & Sort Menu
+    private var sectionHeaderRow: some View {
+        HStack(alignment: .center, spacing: 8) {
+            Text(headerTitle())
+                .font(PixelTheme.uiFont(size: 14, weight: .semibold))
+                .foregroundColor(PixelTheme.ink)
+
+            Text("\(viewModel.notes.count)")
+                .font(PixelTheme.uiFont(size: 11.5, weight: .semibold))
+                .foregroundColor(PixelTheme.muted)
+                .monospacedDigit()
+                .padding(.horizontal, 7)
+                .padding(.vertical, 2)
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(PixelTheme.sidebar)
+                )
+
+            Spacer()
+
+            Menu {
+                Picker("Ordenar por", selection: $viewModel.sortOption) {
+                    ForEach(SortOption.allCases) { option in
+                        Text(sortOptionMenuLabel(option)).tag(option)
+                    }
+                }
+            } label: {
+                HStack(spacing: 5) {
+                    Text(sortOptionShortLabel(viewModel.sortOption))
+                        .font(PixelTheme.uiFont(size: 12.5, weight: .medium))
+                        .foregroundColor(PixelTheme.inkSecondary)
+
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(PixelTheme.muted)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(PixelTheme.paper)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .strokeBorder(PixelTheme.border, lineWidth: 1)
+                )
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+        }
+        .padding(.top, 2)
+    }
+
+    // MARK: - Empty State
+    private var emptyStateView: some View {
+        VStack(spacing: 12) {
+            Spacer()
+            ZStack {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(PixelTheme.sidebar)
+                    .frame(width: 56, height: 56)
+                Image(systemName: "doc.text.magnifyingglass")
+                    .font(.system(size: 24, weight: .medium))
+                    .foregroundColor(PixelTheme.muted)
+            }
+
+            Text(emptyStateTitle())
+                .font(PixelTheme.displayFont(size: 16, weight: .bold))
+                .foregroundColor(PixelTheme.ink)
+
+            Text(emptyStateSubtitle())
+                .font(PixelTheme.uiFont(size: 13))
+                .foregroundColor(PixelTheme.muted)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 48)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, minHeight: 280)
+    }
+
+    // MARK: - Helpers
+    private func isNotebookActive(_ notebook: Notebook) -> Bool {
+        if case .notebook(let current) = viewModel.selectedFilter, current == notebook {
+            return true
+        }
+        return false
+    }
+
     private func headerTitle() -> String {
         switch viewModel.selectedFilter {
         case .all:
-            return "All notes"
+            return "Todas as notas"
         case .uncategorized:
             return "Notas Soltas"
         case .notebook(let notebook):
@@ -207,7 +478,43 @@ struct NotesView: View {
             return "Lixeira"
         }
     }
-    
+
+    private func sortOptionShortLabel(_ option: SortOption) -> String {
+        switch option {
+        case .dateModifiedDescending, .dateModifiedAscending:
+            return "Última edição"
+        case .dateCreatedDescending, .dateCreatedAscending:
+            return "Data de criação"
+        case .titleAscending, .titleDescending:
+            return "Título"
+        }
+    }
+
+    private func sortOptionMenuLabel(_ option: SortOption) -> String {
+        switch option {
+        case .dateModifiedDescending:
+            return "Última edição (mais recente)"
+        case .dateModifiedAscending:
+            return "Última edição (mais antiga)"
+        case .dateCreatedDescending:
+            return "Data de criação (mais recente)"
+        case .dateCreatedAscending:
+            return "Data de criação (mais antiga)"
+        case .titleAscending:
+            return "Título (A–Z)"
+        case .titleDescending:
+            return "Título (Z–A)"
+        }
+    }
+
+    private func statusCountText() -> String {
+        let shown = viewModel.notes.count
+        let total = viewModel.selectedFilter == .trash
+            ? viewModel.countTrashedNotes()
+            : viewModel.countAllNotes()
+        return "\(shown) de \(total) \(total == 1 ? "nota" : "notas")"
+    }
+
     private func emptyStateTitle() -> String {
         if !viewModel.searchQuery.isEmpty {
             return "Nenhum resultado encontrado"
@@ -218,38 +525,38 @@ struct NotesView: View {
         case .uncategorized:
             return "Nenhuma nota solta"
         case .notebook:
-            return "Caderno Vazio"
+            return "Caderno vazio"
         case .trash:
-            return "Lixeira Vazia"
+            return "Lixeira vazia"
         }
     }
-    
+
     private func emptyStateSubtitle() -> String {
         if !viewModel.searchQuery.isEmpty {
             return "Tente buscar por termos diferentes."
         }
         switch viewModel.selectedFilter {
         case .all, .uncategorized, .notebook:
-            return "Adicione uma nova nota clicando no lápis no canto inferior."
+            return "Crie uma nova nota clicando em \"+ Nova nota\" acima."
         case .trash:
             return "Notas excluídas ficarão guardadas aqui."
         }
     }
-    
+
     private func importPDFFile() {
         let openPanel = NSOpenPanel()
         openPanel.allowedContentTypes = [.pdf]
         openPanel.allowsMultipleSelection = false
         openPanel.canChooseDirectories = false
         openPanel.canChooseFiles = true
-        
+
         openPanel.begin { response in
             if response == .OK, let url = openPanel.url {
                 viewModel.importPDF(url: url)
             }
         }
     }
-    
+
     // MARK: - Context Menu builder
     @ViewBuilder
     private func contextMenuContent(for note: Note) -> some View {
@@ -267,7 +574,7 @@ struct NotesView: View {
                     viewModel.moveNote(note, to: nil)
                 }
                 .disabled(note.notebook == nil)
-                
+
                 if !viewModel.notebooks.isEmpty {
                     Divider()
                     ForEach(viewModel.notebooks, id: \.self) { notebook in
@@ -286,49 +593,127 @@ struct NotesView: View {
     }
 }
 
-// MARK: - Note Card Component View
+// MARK: - Shared Date Formatters (Cached to avoid per-render allocation)
+private enum PortugueseDateFormatters {
+    static let today: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "pt_BR")
+        f.dateFormat = "'Hoje, às' HH:mm"
+        return f
+    }()
+
+    static let yesterday: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "pt_BR")
+        f.dateFormat = "'Ontem, às' HH:mm"
+        return f
+    }()
+
+    static let standard: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "pt_BR")
+        f.dateFormat = "dd MMM, HH:mm"
+        return f
+    }()
+}
+
+private func formatPortugueseRelativeDate(_ date: Date) -> String {
+    let calendar = Calendar.current
+    if calendar.isDateInToday(date) {
+        return PortugueseDateFormatters.today.string(from: date)
+    } else if calendar.isDateInYesterday(date) {
+        return PortugueseDateFormatters.yesterday.string(from: date)
+    } else {
+        return PortugueseDateFormatters.standard.string(from: date)
+    }
+}
+
+// MARK: - Note Card Component View (Grid)
 struct NoteCardView: View {
     let note: Note
     @State private var isHovered = false
-    
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            
-            // White Card preview container
-            ZStack {
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(Color.white)
-                    .shadow(color: isHovered ? .black.opacity(0.12) : .black.opacity(0.06),
-                            radius: isHovered ? 8 : 4,
-                            x: 0,
-                            y: isHovered ? 4 : 2)
-                
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(isHovered ? Color.secondary.opacity(0.2) : Color.secondary.opacity(0.1), lineWidth: 1)
-                
-                // Inside content preview
+        VStack(alignment: .leading, spacing: 0) {
+            // Top preview banner
+            ZStack(alignment: .topLeading) {
+                PixelTheme.notebookBannerTint(for: note.notebook?.name)
+
+                // Inset crisp white page thumbnail
                 NoteThumbnailView(note: note)
-                    .clipShape(RoundedRectangle(cornerRadius: 15))
+                    .background(PixelTheme.paper)
+                    .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .strokeBorder(Color.black.opacity(0.06), lineWidth: 0.5)
+                    )
+                    .shadow(color: Color.black.opacity(0.08), radius: 5, x: 0, y: 2)
+                    .aspectRatio(1.0 / 1.32, contentMode: .fit)
+                    .padding(.vertical, 14)
+                    .padding(.horizontal, 18)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+
+                if note.pageCount > 1 {
+                    Text("PDF")
+                        .font(PixelTheme.displayFont(size: 9.5, weight: .bold))
+                        .foregroundColor(PixelTheme.ink)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(
+                            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                .fill(PixelTheme.paper)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                .strokeBorder(PixelTheme.border, lineWidth: 0.75)
+                        )
+                        .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 1)
+                        .padding(10)
+                }
             }
-            .aspectRatio(1.0 / 1.35, contentMode: .fit)
-            .scaleEffect(isHovered ? 1.02 : 1.0)
-            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isHovered)
-            
-            // Title & Subtitle Below the Card
-            VStack(alignment: .center, spacing: 2) {
-                Text(note.title.isEmpty ? "Sem título" : note.title)
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .foregroundColor(.primary)
-                    .lineLimit(1)
-                    .multilineTextAlignment(.center)
-                
-                Text(formatCardDate(note.updatedAt))
-                    .font(.system(size: 11, design: .rounded))
-                    .foregroundColor(.secondary)
+            .frame(height: 150)
+            .clipped()
+
+            Rectangle()
+                .fill(PixelTheme.border.opacity(0.6))
+                .frame(height: 1)
+
+            // Bottom metadata area
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .center, spacing: 8) {
+                    Text(note.title.isEmpty ? "Sem título" : note.title)
+                        .font(PixelTheme.uiFont(size: 14, weight: .semibold))
+                        .foregroundColor(PixelTheme.ink)
+                        .lineLimit(1)
+
+                    Spacer(minLength: 4)
+
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(PixelTheme.muted.opacity(isHovered ? 0.9 : 0.45))
+                }
+
+                HStack(alignment: .center, spacing: 8) {
+                    Text(formatPortugueseRelativeDate(note.updatedAt))
+                        .font(PixelTheme.uiFont(size: 11.5))
+                        .foregroundColor(PixelTheme.muted)
+                        .lineLimit(1)
+
+                    Spacer(minLength: 6)
+
+                    Text(note.notebook?.name ?? "Notas Soltas")
+                        .font(PixelTheme.uiFont(size: 11.5, weight: .medium))
+                        .foregroundColor(PixelTheme.muted)
+                        .lineLimit(1)
+                }
             }
-            .frame(maxWidth: .infinity, alignment: .center)
-            .padding(.top, 4)
+            .padding(14)
+            .background(PixelTheme.paper)
         }
+        .clipShape(RoundedRectangle(cornerRadius: PixelTheme.cardRadius, style: .continuous))
+        .studioCard(isHovered: isHovered)
+        .scaleEffect(isHovered ? 1.01 : 1.0)
+        .animation(.spring(response: 0.25, dampingFraction: 0.75), value: isHovered)
         .onHover { hovering in
             isHovered = hovering
         }
@@ -336,13 +721,86 @@ struct NoteCardView: View {
             NSItemProvider(object: note.id.uuidString as NSString)
         }
     }
-    
-    // MARK: - Date Formatting Helper
-    private func formatCardDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMM d, yyyy"
-        formatter.locale = Locale(identifier: "en_US")
-        return formatter.string(from: date)
+}
+
+// MARK: - Note List Row Card Component (List View)
+struct NoteListRowCardView: View {
+    let note: Note
+    @State private var isHovered = false
+
+    var body: some View {
+        HStack(spacing: 14) {
+            // Mini thumbnail
+            ZStack {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(PixelTheme.notebookBannerTint(for: note.notebook?.name))
+
+                NoteThumbnailView(note: note)
+                    .background(PixelTheme.paper)
+                    .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+                    .shadow(color: Color.black.opacity(0.08), radius: 2, x: 0, y: 1)
+                    .padding(4)
+            }
+            .frame(width: 44, height: 54)
+
+            // Title + notebook metadata
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 6) {
+                    Text(note.title.isEmpty ? "Sem título" : note.title)
+                        .font(PixelTheme.uiFont(size: 14, weight: .semibold))
+                        .foregroundColor(PixelTheme.ink)
+                        .lineLimit(1)
+
+                    if note.pageCount > 1 {
+                        Text("PDF")
+                            .font(PixelTheme.displayFont(size: 9, weight: .bold))
+                            .foregroundColor(PixelTheme.inkSecondary)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(
+                                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                    .fill(PixelTheme.surface)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                    .strokeBorder(PixelTheme.border, lineWidth: 0.75)
+                            )
+                    }
+                }
+
+                HStack(spacing: 6) {
+                    RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                        .fill(PixelTheme.notebookColor(for: note.notebook?.name))
+                        .frame(width: 8, height: 8)
+
+                    Text(note.notebook?.name ?? "Notas Soltas")
+                        .font(PixelTheme.uiFont(size: 12, weight: .medium))
+                        .foregroundColor(PixelTheme.muted)
+                        .lineLimit(1)
+                }
+            }
+
+            Spacer(minLength: 12)
+
+            Text(formatPortugueseRelativeDate(note.updatedAt))
+                .font(PixelTheme.uiFont(size: 12))
+                .foregroundColor(PixelTheme.muted)
+                .lineLimit(1)
+
+            Image(systemName: "ellipsis")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(PixelTheme.muted.opacity(isHovered ? 0.9 : 0.45))
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .studioCard(radius: 10, isHovered: isHovered)
+        .animation(.easeInOut(duration: 0.15), value: isHovered)
+        .onHover { hovering in
+            isHovered = hovering
+        }
+        .onDrag {
+            NSItemProvider(object: note.id.uuidString as NSString)
+        }
     }
 }
 
@@ -367,45 +825,48 @@ struct NoteThumbnailView: View {
                 // If there's text, show a small preview block
                 if !note.content.isEmpty {
                     Text(note.content)
-                        .font(.system(size: 5, weight: .regular, design: .rounded))
-                        .foregroundColor(Color.secondary.opacity(0.8))
+                        .font(.system(size: 5, weight: .regular, design: .monospaced))
+                        .foregroundColor(PixelTheme.muted.opacity(0.8))
                         .lineSpacing(2)
                         .multilineTextAlignment(.leading)
                         .lineLimit(18)
                         .padding(10)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 }
-                
-                // Draw vector paths if there are strokes
-                if let strokesSet = note.strokes as? Set<Stroke>, !strokesSet.isEmpty {
-                    let sortedStrokes = strokesSet.sorted { $0.createdAt < $1.createdAt }
-                    
-                    Canvas { context, size in
-                        // Scaling factors based on US Letter target coordinate space (612 x 792)
-                        let scaleX = size.width / 612.0
-                        let scaleY = size.height / 792.0
-                        
-                        context.scaleBy(x: scaleX, y: scaleY)
-                        
-                        for stroke in sortedStrokes {
-                            let points = deserializePoints(stroke.points)
-                            guard !points.isEmpty else { continue }
-                            
-                            var path = Path()
-                            path.move(to: points[0])
-                            for i in 1..<points.count {
-                                path.addLine(to: points[i])
+
+                // Draw vector paths if there are strokes on the first page
+                if let strokesSet = note.strokes as? Set<Stroke> {
+                    let sortedStrokes = strokesSet
+                        .filter { $0.pageIndex == 0 }
+                        .sorted { $0.createdAt < $1.createdAt }
+                    if !sortedStrokes.isEmpty {
+                        Canvas { context, size in
+                            // Scaling factors based on US Letter target coordinate space (612 x 792)
+                            let scaleX = size.width / 612.0
+                            let scaleY = size.height / 792.0
+
+                            context.scaleBy(x: scaleX, y: scaleY)
+
+                            for stroke in sortedStrokes {
+                                let points = deserializePoints(stroke.points)
+                                guard !points.isEmpty else { continue }
+
+                                var path = Path()
+                                path.move(to: points[0])
+                                for i in 1..<points.count {
+                                    path.addLine(to: points[i])
+                                }
+
+                                let strokeColor = Color(nsColor: NSColor(hex: stroke.color) ?? .black)
+                                context.stroke(
+                                    path,
+                                    with: .color(strokeColor),
+                                    style: StrokeStyle(lineWidth: CGFloat(stroke.width), lineCap: .round, lineJoin: .round)
+                                )
                             }
-                            
-                            let strokeColor = Color(nsColor: NSColor(hex: stroke.color) ?? .black)
-                            context.stroke(
-                                path,
-                                with: .color(strokeColor),
-                                style: StrokeStyle(lineWidth: CGFloat(stroke.width), lineCap: .round, lineJoin: .round)
-                            )
                         }
+                        .background(Color.clear)
                     }
-                    .background(Color.clear)
                 }
             }
         }
