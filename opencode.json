@@ -1,0 +1,14 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "graphify": {
+      "type": "local",
+      "command": [
+        "graphify",
+        "/Users/felipevieira/Developer/easy-notes-ios-main/easy-notes-ios",
+        "--mcp"
+      ],
+      "enabled": true
+    }
+  }
+}
