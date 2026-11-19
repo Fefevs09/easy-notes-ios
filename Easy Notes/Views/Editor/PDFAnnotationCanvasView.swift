@@ -1019,7 +1019,7 @@ struct PDFAnnotationCanvasView: NSViewRepresentable {
         pdfView.minScaleFactor = 0.25
         pdfView.maxScaleFactor = 4.0
         pdfView.displayBox = .mediaBox
-        pdfView.backgroundColor = NSColor.windowBackgroundColor
+        pdfView.backgroundColor = PixelTheme.nsCanvasBackground
 
         pdfView.pageOverlayViewProvider = context.coordinator.provider
 

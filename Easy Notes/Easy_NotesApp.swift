@@ -20,11 +20,13 @@ struct Easy_NotesApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .frame(minWidth: 920, minHeight: 600)
                 .environment(\.managedObjectContext, coreDataStack.viewContext)
                 .environmentObject(viewModel)
-                .accentColor(Color(red: 0.91, green: 0.35, blue: 0.14))
+                .accentColor(PixelTheme.accent)
                 .preferredColorScheme(.light)
         }
+        .defaultSize(width: 1180, height: 760)
         .windowStyle(.hiddenTitleBar)
         .windowToolbarStyle(.unifiedCompact)
     }
