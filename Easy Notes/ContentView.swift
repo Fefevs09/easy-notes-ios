@@ -1,170 +1,303 @@
+import AppKit
+import PDFKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     @EnvironmentObject var viewModel: NoteViewModel
     @StateObject private var canvasVM = CanvasViewModel()
-    
-    @State private var activeTitle: String = ""
-    @State private var loadingNoteId: UUID? = nil
-    
-    @State private var saveTask: Task<Void, Never>? = nil
-    
-    @State private var zoomScale: CGFloat = 2.0
-    @State private var isSidebarOpen: Bool = true
-    @State private var selectedPageIndex: Int = 0
-    
+
+    @State private var activeTitle = ""
+    @State private var loadingNoteId: UUID?
+    @State private var loadedNote: Note?
+    @State private var saveTask: Task<Void, Never>?
+
+    @State private var zoomScale: CGFloat = 1.0
+    @State private var canvasViewportWidth: CGFloat = 0
+    @State private var isSidebarOpen = true
+    @State private var selectedPageIndex = 0
+    @State private var sidebarTab: SidebarTab = .note
+
+    private enum SidebarTab: String, CaseIterable {
+        case note = "Nota"
+        case pages = "Páginas"
+    }
+
     var body: some View {
-        NavigationSplitView {
-            SidebarView()
-                .frame(minWidth: 180, idealWidth: 200, maxWidth: 300)
-        } detail: {
+        Group {
             if let note = viewModel.selectedNote {
-                VStack(spacing: 0) {
-                    // MARK: - Title Input
-                    HStack(spacing: 12) {
-                        Button(action: {
-                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                                viewModel.selectedNote = nil
-                            }
-                        }) {
-                            Image(systemName: "chevron.left")
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundColor(.accentColor)
-                                .padding(8)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .help("Voltar para Notas")
-                        
-                        TextField("Sem título", text: $activeTitle)
-                            .textFieldStyle(.plain)
-                            .font(.system(size: 26, weight: .bold, design: .rounded))
-                            .foregroundColor(.primary)
-                    }
-                    .padding(.horizontal, 24)
-                    .padding(.top, 52)
-                    .padding(.bottom, 12)
-                    
-                    // MARK: - Writing Toolbar (Samsung Notes style)
-                    EditorToolbarView(canvasVM: canvasVM, isSidebarOpen: $isSidebarOpen)
-                    
-                    Divider()
-                    
-                    // MARK: - Drawing Canvas & Sidebar Layer
-                    HStack(spacing: 0) {
-                        ZStack(alignment: .bottomTrailing) {
-                            PDFAnnotationCanvasView(canvasVM: canvasVM, noteVM: viewModel, noteId: note.id, zoomScale: $zoomScale, selectedPageIndex: $selectedPageIndex)
-                                .background(Color.clear)
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            // Floating Zoom Controls
-                            HStack(spacing: 8) {
-                                Button(action: {
-                                    zoomScale = max(0.5, zoomScale - 0.1)
-                                }) {
-                                    Image(systemName: "minus.magnifyingglass")
-                                        .padding(6)
-                                        .background(Color(NSColor.controlBackgroundColor).opacity(0.8))
-                                        .cornerRadius(4)
-                                }
-                                .buttonStyle(PlainButtonStyle())
-                                .help("Zoom Out")
-                                
-                                Text("\(Int(zoomScale * 100))%")
-                                    .font(.system(.body, design: .monospaced))
-                                    .padding(.horizontal, 4)
-                                
-                                Button(action: {
-                                    zoomScale = min(4.0, zoomScale + 0.1)
-                                }) {
-                                    Image(systemName: "plus.magnifyingglass")
-                                        .padding(6)
-                                        .background(Color(NSColor.controlBackgroundColor).opacity(0.8))
-                                        .cornerRadius(4)
-                                }
-                                .buttonStyle(PlainButtonStyle())
-                                .help("Zoom In")
-                                
-                                Button(action: {
-                                    zoomScale = 1.0
-                                }) {
-                                    Image(systemName: "arrow.counterclockwise")
-                                        .padding(6)
-                                        .background(Color(NSColor.controlBackgroundColor).opacity(0.8))
-                                        .cornerRadius(4)
-                                }
-                                .buttonStyle(PlainButtonStyle())
-                                .help("Redefinir para 100%")
-                            }
-                            .padding(8)
-                            .background(Color(NSColor.windowBackgroundColor).opacity(0.9))
-                            .cornerRadius(6)
-                            .shadow(color: .black.opacity(0.15), radius: 3, x: 0, y: 2)
-                            .padding(16)
-                        }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        
-                        if isSidebarOpen {
-                            Divider()
-                            ThumbnailBarView(noteVM: viewModel, pdfDocument: viewModel.selectedNote.flatMap { viewModel.getPDFDocument(for: $0) }, selectedPageIndex: $selectedPageIndex)
-                        }
-                    }
-                }
-                .background(Color(NSColor.textBackgroundColor))
+                editorWorkspace(for: note)
+                    .ignoresSafeArea(.container, edges: .top)
             } else {
-                NotesView()
+                NavigationSplitView {
+                    SidebarView()
+                        .frame(minWidth: 210, idealWidth: 230, maxWidth: 270)
+                } detail: {
+                    NotesView()
+                }
             }
         }
+        .preferredColorScheme(.light)
         .onAppear {
             handleNoteChange(to: viewModel.selectedNote)
         }
-        .onChange(of: viewModel.selectedNote) { newNote in
+        .onChange(of: viewModel.selectedNote) { _, newNote in
             handleNoteChange(to: newNote)
         }
-        .onChange(of: activeTitle) { newTitle in
+        .onChange(of: viewModel.selectedNote?.pageCount) { _, pageCount in
+            selectedPageIndex = min(max(0, selectedPageIndex), max(1, Int(pageCount ?? 1)) - 1)
+        }
+        .onChange(of: activeTitle) { _, newTitle in
+            saveTask?.cancel()
+            saveTask = nil
             if let note = viewModel.selectedNote, note.title != newTitle {
-                scheduleSave()
+                scheduleSave(for: note, title: newTitle)
             }
         }
     }
-    
-    // MARK: - Sync State logic
-    private func handleNoteChange(to newNote: Note?) {
-        // Cancel any pending save tasks from previous note editing
-        saveTask?.cancel()
-        
-        if let note = newNote {
-            let noteChanged = loadingNoteId != note.id
-            Swift.print("DEBUG: handleNoteChange. loadingNoteId: \(String(describing: loadingNoteId)), note.id: \(note.id), noteChanged: \(noteChanged)")
-            
-            activeTitle = note.title
-            loadingNoteId = note.id
-            
-            if noteChanged {
-                Swift.print("DEBUG: Resetting zoomScale and selectedPageIndex to default!")
-                zoomScale = 1.0
-                selectedPageIndex = 0
+
+    private func editorWorkspace(for note: Note) -> some View {
+        let paperStyle = GridStyle(rawValue: note.gridStyle) ?? .none
+
+        return VStack(spacing: 0) {
+            editorHeader(for: note)
+            EditorToolbarView(canvasVM: canvasVM, isSidebarOpen: $isSidebarOpen) {
+                flushPendingTitleSave()
+                viewModel.selectedNote = nil
             }
-        } else {
-            activeTitle = ""
-            loadingNoteId = nil
-//            zoomScale = 1.0
-            selectedPageIndex = 0
-        }
-    }
-    
-    // MARK: - Debounced Database Persistence
-    private func scheduleSave() {
-        saveTask?.cancel()
-        saveTask = Task {
-            // Wait for 500ms of inactivity before saving to Core Data (typing lag avoidance)
-            try? await Task.sleep(nanoseconds: 500_000_000)
-            if Task.isCancelled { return }
-            
-            await MainActor.run {
-                if let note = viewModel.selectedNote {
-                    viewModel.updateNoteContent(note: note, title: activeTitle, content: note.content)
+
+            HStack(spacing: 0) {
+                if isSidebarOpen {
+                    editorSidebar(for: note, paperStyle: paperStyle)
+                }
+
+                GeometryReader { proxy in
+                    PDFAnnotationCanvasView(
+                        canvasVM: canvasVM,
+                        noteVM: viewModel,
+                        noteId: note.id,
+                        zoomScale: $zoomScale,
+                        selectedPageIndex: $selectedPageIndex
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(PixelTheme.canvas)
+                    .onAppear { canvasViewportWidth = proxy.size.width }
+                    .onChange(of: proxy.size.width) { _, width in
+                        canvasViewportWidth = width
+                    }
+                }
+
+                if note.pageCount > 1 {
+                    EditorAnnotationsSidebar(note: note, selectedPageIndex: selectedPageIndex)
+                        .frame(width: 230)
+                        .background(PixelTheme.surface)
+                        .overlay(alignment: .leading) {
+                            Rectangle().fill(PixelTheme.border).frame(width: 1)
+                        }
                 }
             }
+
+            EditorFooterBar(
+                pageCount: max(1, Int(note.pageCount)),
+                paperStyle: paperStyle,
+                selectedPageIndex: $selectedPageIndex,
+                zoomScale: $zoomScale,
+                onFitToWidth: { fitCanvasToWidth(for: note) }
+            )
+        }
+        .background(PixelTheme.paper)
+    }
+
+    private func editorHeader(for note: Note) -> some View {
+        HStack(spacing: 10) {
+            Button {
+                flushPendingTitleSave()
+                viewModel.selectedNote = nil
+            } label: {
+                EasyNotesBrandMark(compact: true)
+            }
+            .buttonStyle(.plain)
+            .fixedSize()
+            .accessibilityLabel("Voltar para Notas")
+            .help("Voltar para Notas")
+
+            Text("/")
+                .foregroundStyle(PixelTheme.muted)
+                .accessibilityHidden(true)
+
+            Text(note.notebook?.name ?? "Notas Soltas")
+                .foregroundStyle(PixelTheme.muted)
+                .lineLimit(1)
+
+            Image(systemName: "chevron.right")
+                .font(PixelTheme.uiFont(size: 9, weight: .semibold))
+                .foregroundStyle(PixelTheme.muted)
+                .accessibilityHidden(true)
+
+            TextField("Sem título", text: $activeTitle)
+                .textFieldStyle(.plain)
+                .font(PixelTheme.uiFont(size: 13.5, weight: .semibold))
+                .foregroundStyle(PixelTheme.ink)
+                .accessibilityLabel("Título da nota")
+
+            Spacer(minLength: 8)
+
+            if saveTask != nil {
+                Text("Salvando...")
+                    .foregroundStyle(PixelTheme.muted)
+                    .fixedSize()
+            } else {
+                Label("Salvo", systemImage: "checkmark")
+                    .foregroundStyle(PixelTheme.success)
+                    .fixedSize()
+            }
+
+            Button {
+                exportPDF(for: note)
+            } label: {
+                Label("Compartilhar", systemImage: "square.and.arrow.up")
+                    .font(PixelTheme.uiFont(size: 12, weight: .semibold))
+                    .foregroundStyle(PixelTheme.ink)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(PixelTheme.paper, in: RoundedRectangle(cornerRadius: 8))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 8)
+                            .strokeBorder(PixelTheme.border, lineWidth: 1)
+                    }
+                    .contentShape(RoundedRectangle(cornerRadius: 8))
+            }
+            .buttonStyle(.plain)
+            .fixedSize()
+            .help("Exportar nota como PDF")
+        }
+        .font(PixelTheme.uiFont(size: 12))
+        .padding(.leading, 76)
+        .padding(.trailing, 16)
+        .frame(height: 48)
+        .background(PixelTheme.paper)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(PixelTheme.border).frame(height: 1)
+        }
+    }
+
+    private func editorSidebar(for note: Note, paperStyle: GridStyle) -> some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 2) {
+                ForEach(SidebarTab.allCases, id: \.self) { tab in
+                    let isSelected = sidebarTab == tab
+
+                    Button {
+                        sidebarTab = tab
+                    } label: {
+                        Text(tab.rawValue)
+                            .font(PixelTheme.uiFont(size: 12, weight: .semibold))
+                            .foregroundStyle(isSelected ? PixelTheme.accent : PixelTheme.inkSecondary)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 26)
+                            .contentShape(Rectangle())
+                            .studioActiveTool(isSelected)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(isSelected ? .isSelected : [])
+                }
+            }
+            .padding(3)
+            .background(PixelTheme.sidebar, in: RoundedRectangle(cornerRadius: 10))
+            .padding(.horizontal, 14)
+            .padding(.top, 12)
+            .padding(.bottom, 4)
+
+            switch sidebarTab {
+            case .note:
+                NotePaperInspector(note: note, title: activeTitle, paperStyle: paperStyle) { style in
+                    viewModel.setGridStyle(style, for: note)
+                }
+            case .pages:
+                ThumbnailBarView(
+                    noteVM: viewModel,
+                    pdfDocument: viewModel.getPDFDocument(for: note),
+                    selectedPageIndex: $selectedPageIndex
+                )
+            }
+        }
+        .frame(width: 220)
+        .frame(maxHeight: .infinity)
+        .background(PixelTheme.surface)
+        .overlay(alignment: .trailing) {
+            Rectangle().fill(PixelTheme.border).frame(width: 1)
+        }
+    }
+
+    private func exportPDF(for note: Note) {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.pdf]
+        panel.canCreateDirectories = true
+        let title = activeTitle.isEmpty ? "Sem título" : activeTitle
+        panel.nameFieldStringValue = "\(title).pdf"
+
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+
+            do {
+                try viewModel.exportPDF(for: note, to: url)
+            } catch {
+                let alert = NSAlert()
+                alert.messageText = "Falha ao exportar PDF"
+                alert.informativeText = error.localizedDescription
+                alert.alertStyle = .warning
+                alert.runModal()
+            }
+        }
+    }
+
+    private func handleNoteChange(to newNote: Note?) {
+        guard loadingNoteId != newNote?.id else { return }
+
+        flushPendingTitleSave()
+        loadedNote = newNote
+        loadingNoteId = newNote?.id
+        activeTitle = newNote?.title ?? ""
+        zoomScale = 1.0
+        selectedPageIndex = 0
+        sidebarTab = (newNote?.pageCount ?? 0) > 1 ? .pages : .note
+    }
+
+    private func flushPendingTitleSave() {
+        saveTask?.cancel()
+        saveTask = nil
+
+        if let outgoing = loadedNote,
+           !outgoing.isDeleted,
+           outgoing.managedObjectContext != nil,
+           outgoing.title != activeTitle {
+            viewModel.updateNoteContent(note: outgoing, title: activeTitle, content: outgoing.content)
+        }
+    }
+
+    private func fitCanvasToWidth(for note: Note) {
+        let availableWidth = max(200, canvasViewportWidth - 48)
+        let pageWidth: CGFloat
+        if let doc = viewModel.getPDFDocument(for: note),
+           let page = doc.page(at: min(max(0, selectedPageIndex), max(0, doc.pageCount - 1))) {
+            pageWidth = max(1, page.bounds(for: .mediaBox).width)
+        } else {
+            pageWidth = 612
+        }
+        let rawScale = availableWidth / pageWidth
+        let rounded = (rawScale * 20).rounded() / 20
+        zoomScale = min(4.0, max(0.5, rounded))
+    }
+
+    private func scheduleSave(for note: Note, title: String) {
+        saveTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            guard !Task.isCancelled else { return }
+
+            if viewModel.selectedNote?.id == note.id {
+                viewModel.updateNoteContent(note: note, title: title, content: note.content)
+            }
+            saveTask = nil
         }
     }
 }

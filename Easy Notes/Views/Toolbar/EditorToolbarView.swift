@@ -1,158 +1,407 @@
+import AppKit
 import SwiftUI
-import PDFKit
 import UniformTypeIdentifiers
 
 struct EditorToolbarView: View {
     @EnvironmentObject var viewModel: NoteViewModel
     @ObservedObject var canvasVM: CanvasViewModel
     @Binding var isSidebarOpen: Bool
+    var onBackToLibrary: (() -> Void)? = nil
+
+    @Environment(\.displayScale) private var displayScale
     @State private var isSizePopoverPresented = false
 
+    private var isPenTool: Bool {
+        switch canvasVM.activeTool {
+        case .fountainPen, .calligraphy, .pencil: true
+        default: false
+        }
+    }
+
+    private var contextualTool: ToolType {
+        canvasVM.isDrawingMode ? canvasVM.activeTool : .select
+    }
+
+    private var strokeSizeTitle: String {
+        canvasVM.activeTool == .eraser ? "Tamanho da borracha" : "Espessura do traço"
+    }
+
     var body: some View {
-        HStack(spacing: 12) {
-            // MARK: - Drawing Tool Icons
-            HStack(spacing: 6) {
-                readingModeButton
-                toolButton(tool: .fountainPen, icon: "pencil.tip")
-                toolButton(tool: .calligraphy, icon: "scribble.variable")
-                toolButton(tool: .pencil, icon: "pencil")
-                toolButton(tool: .highlighter, icon: "highlighter")
-                toolButton(tool: .eraser, icon: "eraser.line.dashed")
+        VStack(spacing: 0) {
+            primaryBar
+            contextualBar
+        }
+        .onChange(of: contextualTool) { _, _ in
+            isSizePopoverPresented = false
+        }
+    }
 
-                Divider().frame(height: 18)
+    private var primaryBar: some View {
+        let canUndo = viewModel.drawnObjectCount(for: viewModel.selectedNote) > 0
 
-                // Geometry: select/edit, shapes menu, grid menu
-                toolButton(tool: .select, icon: "cursorarrow.square")
-                shapesMenu
-                gridMenu
-            }
-
-            Divider().frame(height: 18)
-            
-            // MARK: - Drawing Configuration (Color, Preset, Size)
-            if canvasVM.isDrawingMode && canvasVM.activeTool != .select {
-                HStack(spacing: 12) {
-                    // Quick Preset Colors (eraser has no color of its own)
-                    if canvasVM.activeTool != .eraser {
-                        HStack(spacing: 5) {
-                            presetColorButton(color: .black)
-                            presetColorButton(color: .blue)
-                            presetColorButton(color: .red)
-                            presetColorButton(color: .green)
-
-                            // Custom Color Picker
-                            ColorPicker("", selection: Binding(
-                                get: { canvasVM.strokeColor },
-                                set: { canvasVM.strokeColor = effectiveColor($0) }
-                            ))
-                                .labelsHidden()
-                                .scaleEffect(0.85)
-                                .help("Customizar Cor")
-                        }
-
-                        Divider().frame(height: 18)
-                    }
-
-                    // Width / Eraser Size Control — opens a popover with a
-                    // richer size-picker (live preview, presets, fine slider).
-                    Button(action: {
-                        isSizePopoverPresented.toggle()
-                    }) {
-                        HStack(spacing: 4) {
-                            Image(systemName: canvasVM.activeTool == .eraser ? "eraser" : "line.horizontal.3.decrease")
-                                .font(.body)
-                            Text("\(Int(canvasVM.strokeWidth))pt")
-                                .font(.caption)
-                                .monospacedDigit()
-                        }
-                        .foregroundColor(isSizePopoverPresented ? .white : .primary)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6)
-                                .fill(isSizePopoverPresented ? Color.accentColor : Color.clear)
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .help(canvasVM.activeTool == .eraser ? "Tamanho da borracha" : "Espessura do traço")
-                    .popover(isPresented: $isSizePopoverPresented) {
-                        strokeSizePopoverContent
-                    }
-
-                    // Fill toggle (only meaningful for closed shapes)
-                    if canvasVM.activeTool == .shape {
-                        Divider().frame(height: 18)
-                        Button(action: {
-                            canvasVM.shapeFillEnabled.toggle()
-                        }) {
-                            Image(systemName: canvasVM.shapeFillEnabled
-                                  ? "square.fill" : "square")
-                                .font(.body)
-                                .foregroundColor(canvasVM.shapeFillEnabled ? .accentColor : .primary)
-                                .padding(6)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .help("Preencher forma")
-                    }
+        return HStack(spacing: 6) {
+            Button {
+                if let onBackToLibrary {
+                    onBackToLibrary()
+                } else {
+                    viewModel.selectedNote = nil
                 }
-                .transition(.opacity)
+            } label: {
+                primaryLabel("Biblioteca", icon: "arrow.left")
             }
-            
+            .buttonStyle(.plain)
+
+            separator
+
+            primaryTool("Seleção", icon: "cursorarrow", isSelected: contextualTool == .select) {
+                canvasVM.enableReadingMode()
+            }
+
+            primaryTool("Caneta", icon: "pencil.tip", isSelected: canvasVM.isDrawingMode && isPenTool) {
+                if !canvasVM.isDrawingMode || !isPenTool {
+                    canvasVM.selectTool(isPenTool ? canvasVM.activeTool : .fountainPen)
+                }
+            }
+
+            primaryTool("Marca-texto", icon: "highlighter", isSelected: contextualTool == .highlighter) {
+                if contextualTool != .highlighter {
+                    canvasVM.selectTool(.highlighter)
+                }
+            }
+
+            primaryTool("Borracha", icon: "eraser", isSelected: contextualTool == .eraser) {
+                if contextualTool != .eraser {
+                    canvasVM.selectTool(.eraser)
+                }
+            }
+
+            shapesMenu
+            separator
+
+            Button {
+                viewModel.undoLastObject()
+            } label: {
+                iconLabel("arrow.uturn.backward", color: canUndo ? PixelTheme.inkSecondary : PixelTheme.muted.opacity(0.5))
+            }
+            .buttonStyle(.plain)
+            .disabled(!canUndo)
+            .accessibilityLabel("Desfazer último objeto")
+            .help("Desfazer último objeto")
+
             Spacer()
-            
-            // MARK: - Undo, Export & Sidebar Toggle
-            HStack(spacing: 12) {
-                // Undo Button
-                Button(action: {
-                    viewModel.undoLastObject()
-                }) {
-                    Image(systemName: "arrow.uturn.backward")
-                        .font(.body)
-                        .foregroundColor(viewModel.drawnObjectCount(for: viewModel.selectedNote) > 0 ? .primary : .secondary.opacity(0.4))
-                        .padding(6)
-                        .contentShape(Rectangle())
+
+            Button {
+                withAnimation {
+                    isSidebarOpen.toggle()
                 }
-                .buttonStyle(.plain)
-                .disabled(viewModel.drawnObjectCount(for: viewModel.selectedNote) == 0)
-                .help("Desfazer último objeto")
-                
-                Divider().frame(height: 18)
-                
-                // Export PDF Button
-                Button(action: {
-                    exportPDF()
-                }) {
-                    Image(systemName: "square.and.arrow.up")
-                        .font(.body)
-                        .foregroundColor(.primary)
-                        .padding(6)
-                        .contentShape(Rectangle())
+            } label: {
+                iconLabel(
+                    isSidebarOpen ? "sidebar.squares.left" : "sidebar.left",
+                    color: isSidebarOpen ? PixelTheme.accent : PixelTheme.inkSecondary
+                )
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(isSidebarOpen ? "Ocultar painel lateral" : "Mostrar painel lateral")
+            .help(isSidebarOpen ? "Ocultar painel lateral" : "Mostrar painel lateral")
+
+            optionsMenu
+        }
+        .modifier(ToolbarRow(height: 46, fill: PixelTheme.paper, hairline: 1 / displayScale))
+    }
+
+    private var shapesMenu: some View {
+        Menu {
+            ForEach(ShapeKind.drawable, id: \.self) { kind in
+                Button {
+                    canvasVM.activeShapeKind = kind
+                    canvasVM.selectTool(.shape)
+                } label: {
+                    Label(kind.displayName, systemImage: kind.systemImage)
                 }
-                .buttonStyle(.plain)
-                .help("Exportar Nota como PDF")
-                
-                // Toggle Sidebar Button
-                Button(action: {
-                    withAnimation {
-                        isSidebarOpen.toggle()
+            }
+        } label: {
+            primaryLabel("Formas", icon: "square.on.circle", isSelected: contextualTool == .shape)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Formas geométricas")
+    }
+
+    private var optionsMenu: some View {
+        let gridStyle = GridStyle(rawValue: viewModel.selectedNote?.gridStyle ?? "") ?? .none
+
+        return Menu {
+            Button("Exportar como PDF", action: exportPDF)
+                .disabled(viewModel.selectedNote == nil)
+
+            Menu("Papel / Grade") {
+                ForEach(GridStyle.allCases, id: \.self) { style in
+                    Button {
+                        if let note = viewModel.selectedNote {
+                            viewModel.setGridStyle(style, for: note)
+                        }
+                    } label: {
+                        Label(style.displayName, systemImage: gridStyle == style ? "checkmark" : style.systemImage)
                     }
-                }) {
-                    Image(systemName: isSidebarOpen ? "sidebar.right" : "sidebar.right")
-                        .font(.body)
-                        .foregroundColor(isSidebarOpen ? .accentColor : .primary)
-                        .padding(6)
-                        .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
-                .help(isSidebarOpen ? "Ocultar miniaturas" : "Mostrar miniaturas")
+            }
+            .disabled(viewModel.selectedNote == nil)
+        } label: {
+            iconLabel("ellipsis")
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .accessibilityLabel("Mais opções")
+        .help("Mais opções")
+    }
+
+    private var contextualBar: some View {
+        HStack(spacing: 10) {
+            switch contextualTool {
+            case .fountainPen, .calligraphy, .pencil:
+                Text("CANETA").studioSectionHeader().fixedSize()
+                penOptions
+                separator
+                colorOptions
+                separator
+                sizeOptions("Espessura")
+                Spacer(minLength: 0)
+                hint("Escreva do seu jeito")
+
+            case .highlighter:
+                Text("MARCA-TEXTO").studioSectionHeader().fixedSize()
+                colorOptions
+                separator
+                sizeOptions("Espessura")
+                separator
+                HStack(spacing: 6) {
+                    optionLabel("Opacidade")
+                    Text("\(Int(CanvasViewModel.highlighterOpacity * 100))%")
+                        .monospacedDigit()
+                        .modifier(OptionPill())
+                        .fixedSize()
+                }
+                Spacer(minLength: 0)
+                hint("Anote e destaque sem alterar o original")
+
+            case .eraser:
+                Text("BORRACHA").studioSectionHeader().fixedSize()
+                sizeOptions("Tamanho")
+                Spacer(minLength: 0)
+                hint("Apague traços livres")
+
+            case .shape:
+                Text("FORMAS").studioSectionHeader().fixedSize()
+                colorOptions
+                separator
+                sizeOptions("Espessura")
+                separator
+                segmentButton("Preencher", isSelected: canvasVM.shapeFillEnabled) {
+                    canvasVM.shapeFillEnabled.toggle()
+                }
+                segmentButton("Selecionar formas", isSelected: false) {
+                    canvasVM.selectTool(.select)
+                }
+                Spacer(minLength: 0)
+
+            case .select:
+                Text("SELEÇÃO").studioSectionHeader().fixedSize()
+                selectionOptions
+                Spacer(minLength: 0)
+                hint("Navegue no documento ou mova formas")
             }
         }
-        .padding(.horizontal, 16)
-        .frame(height: 44)
-        .background(Color(NSColor.windowBackgroundColor).opacity(0.85))
+        .modifier(ToolbarRow(height: 40, fill: PixelTheme.surface, hairline: 1 / displayScale))
     }
-    
+
+    private var penOptions: some View {
+        HStack(spacing: 2) {
+            penButton("Tinteiro", tool: .fountainPen)
+            penButton("Caligráfica", tool: .calligraphy)
+            penButton("Lápis", tool: .pencil)
+        }
+        .padding(2)
+        .modifier(OptionBorder())
+        .fixedSize()
+    }
+
+    private func penButton(_ title: LocalizedStringKey, tool: ToolType) -> some View {
+        segmentButton(title, isSelected: canvasVM.activeTool == tool) {
+            if canvasVM.activeTool != tool {
+                canvasVM.selectTool(tool)
+            }
+        }
+    }
+
+    private var selectionOptions: some View {
+        HStack(spacing: 2) {
+            segmentButton("Leitura", isSelected: !canvasVM.isDrawingMode) {
+                canvasVM.enableReadingMode()
+            }
+            segmentButton("Selecionar formas", isSelected: canvasVM.isDrawingMode) {
+                canvasVM.selectTool(.select)
+            }
+        }
+        .padding(2)
+        .modifier(OptionBorder())
+        .fixedSize()
+    }
+
+    private var colorOptions: some View {
+        let swatchNames: [LocalizedStringKey] = ["Carvão", "Violeta", "Sálvia", "Ocre", "Terracota"]
+
+        return HStack(spacing: 6) {
+            optionLabel("Cor")
+            ForEach(Array(zip(PixelTheme.presetSwatches, swatchNames)), id: \.0) { swatch, name in
+                presetColorButton(swatch, name: name)
+            }
+
+            ColorPicker("Cor personalizada", selection: Binding(
+                get: { canvasVM.strokeColor },
+                set: { canvasVM.strokeColor = effectiveColor($0) }
+            ))
+            .labelsHidden()
+            .scaleEffect(0.85)
+            .help("Cor personalizada")
+        }
+        .fixedSize()
+    }
+
+    private func effectiveColor(_ base: Color) -> Color {
+        canvasVM.activeTool == .highlighter ? base.withAlpha(CanvasViewModel.highlighterOpacity) : base
+    }
+
+    private func presetColorButton(_ color: Color, name: LocalizedStringKey) -> some View {
+        let display = effectiveColor(color)
+        let isSelected = canvasVM.strokeColor == display
+
+        return Button {
+            canvasVM.strokeColor = display
+        } label: {
+            Circle()
+                .fill(display)
+                .overlay {
+                    Circle()
+                        .strokeBorder(PixelTheme.paper, lineWidth: 1.5)
+                        .padding(1)
+                }
+                .overlay {
+                    Circle()
+                        .strokeBorder(isSelected ? PixelTheme.accent : PixelTheme.borderStrong)
+                }
+                .overlay {
+                    if isSelected {
+                        Image(systemName: "checkmark")
+                            .font(PixelTheme.uiFont(size: 8, weight: .bold))
+                            .foregroundStyle(PixelTheme.ink)
+                            .padding(2)
+                            .background(PixelTheme.paper.opacity(0.85), in: Circle())
+                    }
+                }
+                .frame(width: 20, height: 20)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(name))
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    private func sizeOptions(_ title: LocalizedStringKey) -> some View {
+        HStack(spacing: 6) {
+            optionLabel(title)
+            Button {
+                isSizePopoverPresented.toggle()
+            } label: {
+                HStack(spacing: 5) {
+                    Text("\(Int(canvasVM.strokeWidth)) pt")
+                        .monospacedDigit()
+                    Image(systemName: "chevron.down")
+                        .font(PixelTheme.uiFont(size: 9, weight: .semibold))
+                }
+                .modifier(OptionPill())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(strokeSizeTitle)
+            .accessibilityValue("\(Int(canvasVM.strokeWidth)) pt")
+            .help(strokeSizeTitle)
+            .popover(isPresented: $isSizePopoverPresented) {
+                strokeSizePopoverContent
+            }
+        }
+        .fixedSize()
+    }
+
+    private var separator: some View {
+        Rectangle()
+            .fill(PixelTheme.border)
+            .frame(width: 1 / displayScale, height: 20)
+            .accessibilityHidden(true)
+    }
+
+    private func primaryTool(
+        _ title: LocalizedStringKey, icon: String, isSelected: Bool, action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            primaryLabel(title, icon: icon, isSelected: isSelected)
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    private func primaryLabel(_ title: LocalizedStringKey, icon: String, isSelected: Bool = false) -> some View {
+        Label(title, systemImage: icon)
+            .labelStyle(.titleAndIcon)
+            .font(PixelTheme.uiFont(size: 12, weight: .medium))
+            .foregroundStyle(isSelected ? PixelTheme.accent : PixelTheme.inkSecondary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .studioActiveTool(isSelected)
+            .contentShape(Rectangle())
+            .fixedSize()
+    }
+
+    private func iconLabel(_ icon: String, color: Color = PixelTheme.inkSecondary) -> some View {
+        Image(systemName: icon)
+            .font(PixelTheme.uiFont(size: 13, weight: .medium))
+            .foregroundStyle(color)
+            .frame(width: 26, height: 26)
+            .contentShape(Rectangle())
+    }
+
+    private func segmentButton(_ title: LocalizedStringKey, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(PixelTheme.uiFont(size: 11, weight: .medium))
+                .foregroundStyle(isSelected ? PixelTheme.accent : PixelTheme.inkSecondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(
+                    isSelected ? PixelTheme.accentSoft : PixelTheme.paper,
+                    in: RoundedRectangle(cornerRadius: PixelTheme.pillRadius)
+                )
+                .contentShape(Rectangle())
+                .fixedSize()
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    private func optionLabel(_ title: LocalizedStringKey) -> some View {
+        Text(title)
+            .font(PixelTheme.uiFont(size: 11, weight: .medium))
+            .foregroundStyle(PixelTheme.muted)
+    }
+
+    private func hint(_ title: LocalizedStringKey) -> some View {
+        Text(title)
+            .font(PixelTheme.uiFont(size: 11.5))
+            .foregroundStyle(PixelTheme.muted)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .layoutPriority(-1)
+    }
+
     private func exportPDF() {
         guard let note = viewModel.selectedNote else { return }
 
@@ -175,143 +424,16 @@ struct EditorToolbarView: View {
             }
         }
     }
-    
-    
-    // Reading mode toggle: shows the PDF's default pointer/interactions and
-    // suppresses the custom drawing cursor.
-    private var readingModeButton: some View {
-        let isSelected = !canvasVM.isDrawingMode
-        return Button(action: {
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                canvasVM.enableReadingMode()
-            }
-        }) {
-            Image(systemName: "cursorarrow")
-                .font(.body)
-                .foregroundColor(isSelected ? .white : .primary)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(isSelected ? Color.accentColor : Color.clear)
-                )
-        }
-        .buttonStyle(.plain)
-        .help("Leitura (cursor padrão)")
-    }
-
-    // Shapes menu: pick a geometric shape to draw by dragging.
-    private var shapesMenu: some View {
-        let isSelected = canvasVM.isDrawingMode && canvasVM.activeTool == .shape
-        return Menu {
-            ForEach(ShapeKind.drawable, id: \.self) { kind in
-                Button(action: {
-                    canvasVM.activeShapeKind = kind
-                    canvasVM.selectTool(.shape)
-                }) {
-                    Label(kind.displayName, systemImage: kind.systemImage)
-                }
-            }
-        } label: {
-            Image(systemName: isSelected ? canvasVM.activeShapeKind.systemImage : "square.on.circle")
-                .font(.body)
-                .foregroundColor(isSelected ? .white : .primary)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(isSelected ? Color.accentColor : Color.clear)
-                )
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .help("Formas geométricas")
-    }
-
-    // Grid menu: choose the cartesian graph-paper style for the current note.
-    private var gridMenu: some View {
-        let current = GridStyle(rawValue: viewModel.selectedNote?.gridStyle ?? "none") ?? .none
-        let isActive = current != .none
-        return Menu {
-            ForEach(GridStyle.allCases, id: \.self) { style in
-                Button(action: {
-                    if let note = viewModel.selectedNote {
-                        viewModel.setGridStyle(style, for: note)
-                    }
-                }) {
-                    Label(style.displayName, systemImage: current == style ? "checkmark" : style.systemImage)
-                }
-            }
-        } label: {
-            Image(systemName: "grid")
-                .font(.body)
-                .foregroundColor(isActive ? .white : .primary)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(isActive ? Color.accentColor : Color.clear)
-                )
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .disabled(viewModel.selectedNote == nil)
-        .help("Grade / papel milimetrado")
-    }
-
-    // Tool selection button view helper
-    private func toolButton(tool: ToolType, icon: String) -> some View {
-        let isSelected = canvasVM.isDrawingMode && canvasVM.activeTool == tool
-        return Button(action: {
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                canvasVM.selectTool(tool)
-            }
-        }) {
-            Image(systemName: icon)
-                .font(.body)
-                .foregroundColor(isSelected ? .white : .primary)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(isSelected ? Color.accentColor : Color.clear)
-                )
-        }
-        .buttonStyle(.plain)
-        .help(tool.rawValue)
-    }
-    
-    // Maps a preset/custom color to what actually gets painted for the active
-    // tool — the highlighter always paints translucent, other tools opaque.
-    private func effectiveColor(_ base: Color) -> Color {
-        canvasVM.activeTool == .highlighter ? base.withAlpha(CanvasViewModel.highlighterOpacity) : base
-    }
-
-    // Preset color button view helper
-    private func presetColorButton(color: Color) -> some View {
-        let display = effectiveColor(color)
-        return Button(action: {
-            canvasVM.strokeColor = display
-        }) {
-            Circle()
-                .fill(display)
-                .frame(width: 14, height: 14)
-                .overlay(
-                    Circle()
-                        .stroke(Color.white, lineWidth: canvasVM.strokeColor == display ? 1.5 : 0)
-                )
-                .shadow(color: .black.opacity(0.15), radius: 1, x: 0, y: 1)
-        }
-        .buttonStyle(.plain)
-    }
 
     // MARK: - Stroke / Eraser Size Popover
 
-    /// Active min...max range for the width slider — wider for the eraser.
+    /// Active min...max range for the width slider — wider for the eraser and highlighter.
     private var activeWidthRange: ClosedRange<CGFloat> {
-        canvasVM.activeTool == .eraser ? 4...40 : 1...16
+        switch canvasVM.activeTool {
+        case .eraser: return 4...40
+        case .highlighter: return 8...36
+        default: return 1...16
+        }
     }
 
     /// Size presets computed proportionally (12% / 35% / 65% / 90%) across the
@@ -338,55 +460,90 @@ struct EditorToolbarView: View {
 
     private var strokeSizePopoverContent: some View {
         VStack(spacing: 14) {
-            Text(canvasVM.activeTool == .eraser ? "Tamanho da borracha" : "Espessura do traço")
-                .font(.headline)
+            Text(strokeSizeTitle)
+                .font(PixelTheme.uiFont(size: 13, weight: .semibold))
+                .foregroundStyle(PixelTheme.ink)
 
-            // Live preview
-            Group {
-                if canvasVM.activeTool == .eraser {
-                    Circle()
-                        .fill(Color.secondary.opacity(0.12))
-                        .overlay(Circle().stroke(Color.secondary, lineWidth: 1.5))
-                } else {
-                    Circle()
-                        .fill(canvasVM.strokeColor)
-                        .shadow(color: .black.opacity(0.15), radius: 1, x: 0, y: 1)
-                }
-            }
-            .frame(width: previewDiameter(for: canvasVM.strokeWidth),
-                   height: previewDiameter(for: canvasVM.strokeWidth))
-            .frame(width: 64, height: 64)
-
-            // Size presets
-            HStack(spacing: 8) {
-                ForEach(sizePresets, id: \.label) { preset in
-                    let isActive = abs(canvasVM.strokeWidth - preset.value) < 0.75
-                    Button(action: {
-                        canvasVM.strokeWidth = preset.value
-                    }) {
-                        Text(preset.label)
-                            .font(.caption.weight(.medium))
-                            .foregroundColor(isActive ? .white : .primary)
-                            .frame(width: 32, height: 24)
-                            .background(
-                                RoundedRectangle(cornerRadius: 6)
-                                    .fill(isActive ? Color.accentColor : Color.secondary.opacity(0.15))
-                            )
+            let diameter = previewDiameter(for: canvasVM.strokeWidth)
+            Circle()
+                .fill(canvasVM.activeTool == .eraser ? PixelTheme.border : canvasVM.strokeColor)
+                .overlay {
+                    if canvasVM.activeTool == .eraser {
+                        Circle().strokeBorder(PixelTheme.muted, lineWidth: 1.5)
                     }
-                    .buttonStyle(.plain)
+                }
+                .frame(width: diameter, height: diameter)
+                .frame(width: 64, height: 64)
+                .accessibilityHidden(true)
+
+            HStack(spacing: 6) {
+                ForEach(sizePresets, id: \.label) { preset in
+                    segmentButton(
+                        LocalizedStringKey(preset.label),
+                        isSelected: abs(canvasVM.strokeWidth - preset.value) < 0.75
+                    ) {
+                        canvasVM.strokeWidth = preset.value
+                    }
                 }
             }
+            .padding(2)
+            .modifier(OptionBorder())
 
-            // Fine slider
             VStack(spacing: 4) {
-                Slider(value: $canvasVM.strokeWidth, in: activeWidthRange)
-                    .tint(Color.accentColor)
-                Text("\(Int(canvasVM.strokeWidth))pt")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                Slider(value: $canvasVM.strokeWidth, in: activeWidthRange) {
+                    Text(strokeSizeTitle)
+                }
+                .labelsHidden()
+                .tint(PixelTheme.accent)
+
+                Text("\(Int(canvasVM.strokeWidth)) pt")
+                    .font(PixelTheme.uiFont(size: 11))
+                    .monospacedDigit()
+                    .foregroundStyle(PixelTheme.muted)
             }
         }
         .padding(16)
         .frame(width: 210)
+        .studioCard()
+        .background(PixelTheme.paper)
+    }
+
+    private struct ToolbarRow: ViewModifier {
+        let height: CGFloat
+        let fill: Color
+        let hairline: CGFloat
+
+        func body(content: Content) -> some View {
+            content
+                .padding(.horizontal, 16)
+                .frame(height: height)
+                .background(fill)
+                .overlay(alignment: .bottom) {
+                    Rectangle().fill(PixelTheme.border).frame(height: hairline)
+                }
+        }
+    }
+
+    private struct OptionBorder: ViewModifier {
+        func body(content: Content) -> some View {
+            let outline = RoundedRectangle(cornerRadius: PixelTheme.controlRadius)
+            content
+                .background(PixelTheme.paper, in: outline)
+                .overlay {
+                    outline.strokeBorder(PixelTheme.border)
+                        .allowsHitTesting(false)
+                }
+        }
+    }
+
+    private struct OptionPill: ViewModifier {
+        func body(content: Content) -> some View {
+            content
+                .font(PixelTheme.uiFont(size: 11, weight: .medium))
+                .foregroundStyle(PixelTheme.inkSecondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .modifier(OptionBorder())
+        }
     }
 }
