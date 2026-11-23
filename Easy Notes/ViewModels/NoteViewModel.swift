@@ -598,6 +598,43 @@ public class NoteViewModel: ObservableObject {
         loadNotes()
     }
 
+    // MARK: - Note Emoji (FEAT-02 Contract)
+
+    public static func normalizedEmoji(_ raw: String?) -> String? {
+        guard let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty,
+              let firstCharacter = trimmed.first else {
+            return nil
+        }
+        return String(firstCharacter)
+    }
+
+    public func setEmoji(_ emoji: String?, for note: Note) throws {
+        guard note.managedObjectContext === context, !note.isDeleted else {
+            throw CocoaError(.managedObjectReferentialIntegrity)
+        }
+
+        let normalized = Self.normalizedEmoji(emoji)
+        guard note.emoji != normalized else { return }
+
+        let previousEmoji = note.emoji
+        let previousUpdatedAt = note.updatedAt
+
+        let now = Date()
+        note.emoji = normalized
+        note.updatedAt = max(now, previousUpdatedAt.addingTimeInterval(0.001))
+
+        do {
+            try context.save()
+        } catch {
+            note.emoji = previousEmoji
+            note.updatedAt = previousUpdatedAt
+            throw error
+        }
+
+        loadNotes()
+    }
+
     // MARK: - Note Covers (FEAT-03 / FEAT-02 Contract)
 
     public func setCover(for note: Note, from url: URL) throws {

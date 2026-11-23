@@ -116,6 +116,11 @@ public class CoreDataStack {
         noteCoverUpdatedAtAttribute.attributeType = .dateAttributeType
         noteCoverUpdatedAtAttribute.isOptional = true
 
+        let noteEmojiAttribute = NSAttributeDescription()
+        noteEmojiAttribute.name = "emoji"
+        noteEmojiAttribute.attributeType = .stringAttributeType
+        noteEmojiAttribute.isOptional = true
+
         noteEntity.properties = [
             noteIdAttribute,
             noteTitleAttribute,
@@ -131,7 +136,8 @@ public class CoreDataStack {
             noteGridOriginYAttribute,
             noteCoverMediaDataAttribute,
             noteCoverMediaTypeAttribute,
-            noteCoverUpdatedAtAttribute
+            noteCoverUpdatedAtAttribute,
+            noteEmojiAttribute
         ]
         
         // --- 3. Entity: Stroke ---
