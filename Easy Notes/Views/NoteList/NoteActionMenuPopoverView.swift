@@ -151,9 +151,85 @@ struct SecondaryClickOverlay: NSViewRepresentable {
     }
 }
 
+@MainActor
+final class SecondaryClickMonitorRegistry {
+    static let shared = SecondaryClickMonitorRegistry()
+
+    private struct WeakDetectorBox {
+        weak var view: SecondaryClickDetectorView?
+    }
+
+    private var boxes: [WeakDetectorBox] = []
+    private var eventMonitor: Any?
+
+    var activeDetectorCount: Int {
+        prune()
+        return boxes.count
+    }
+
+    var hasInstalledMonitor: Bool {
+        eventMonitor != nil
+    }
+
+    func register(_ view: SecondaryClickDetectorView) {
+        prune()
+        if !boxes.contains(where: { $0.view === view }) {
+            boxes.append(WeakDetectorBox(view: view))
+        }
+        installMonitorIfNeeded()
+    }
+
+    func unregister(_ view: SecondaryClickDetectorView) {
+        boxes.removeAll { $0.view == nil || $0.view === view }
+        if boxes.isEmpty {
+            removeMonitor()
+        }
+    }
+
+    private func prune() {
+        boxes.removeAll { $0.view == nil }
+        if boxes.isEmpty {
+            removeMonitor()
+        }
+    }
+
+    private func installMonitorIfNeeded() {
+        guard eventMonitor == nil, !boxes.isEmpty else { return }
+        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.rightMouseDown, .leftMouseDown]) { [weak self] event in
+            self?.dispatchMouseEvent(event) ?? event
+        }
+    }
+
+    private func removeMonitor() {
+        if let monitor = eventMonitor {
+            NSEvent.removeMonitor(monitor)
+            eventMonitor = nil
+        }
+    }
+
+    private func dispatchMouseEvent(_ event: NSEvent) -> NSEvent? {
+        prune()
+        for box in boxes {
+            guard let detector = box.view,
+                  detector.shouldInterceptSecondaryClick(for: event) else {
+                continue
+            }
+            let callback = detector.onSecondaryClick
+            DispatchQueue.main.async {
+                callback?()
+            }
+            return nil
+        }
+        return event
+    }
+}
+
 final class SecondaryClickDetectorView: NSView {
     var onSecondaryClick: (() -> Void)?
-    private var eventMonitor: Any?
+
+    isolated deinit {
+        teardownMonitor()
+    }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         nil
@@ -176,43 +252,48 @@ final class SecondaryClickDetectorView: NSView {
     }
 
     func teardownMonitor() {
-        if let monitor = eventMonitor {
-            NSEvent.removeMonitor(monitor)
-            eventMonitor = nil
-        }
+        SecondaryClickMonitorRegistry.shared.unregister(self)
     }
 
     private func installMonitorIfNeeded() {
-        guard eventMonitor == nil else { return }
-        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.rightMouseDown, .leftMouseDown]) { [weak self] event in
-            guard let self else { return event }
-            return self.handleMouseEvent(event)
-        }
+        SecondaryClickMonitorRegistry.shared.register(self)
     }
 
-    private func handleMouseEvent(_ event: NSEvent) -> NSEvent? {
+    func shouldInterceptSecondaryClick(for event: NSEvent) -> Bool {
         let isSecondaryClick = event.type == .rightMouseDown
             || (event.type == .leftMouseDown && event.modifierFlags.contains(.control))
-        guard isSecondaryClick else { return event }
+        guard isSecondaryClick else { return false }
 
         guard let window,
               event.window === window,
               NSApp.modalWindow == nil,
               window.attachedSheet == nil,
+              !NSApp.windows.contains(where: { ($0 is NSOpenPanel || $0 is NSSavePanel) && $0.isVisible }),
               !isHiddenOrHasHiddenAncestor else {
-            return event
+            return false
+        }
+
+        guard window.contentLayoutRect.contains(event.locationInWindow) else {
+            return false
         }
 
         let localPoint = convert(event.locationInWindow, from: nil)
         guard bounds.contains(localPoint), visibleRect.contains(localPoint) else {
-            return event
+            return false
         }
 
-        let callback = onSecondaryClick
-        DispatchQueue.main.async {
-            callback?()
+        if let rootView = window.contentView?.superview ?? window.contentView {
+            let rootPoint = rootView.convert(event.locationInWindow, from: nil)
+            guard let hitView = rootView.hitTest(rootPoint) else {
+                return false
+            }
+            let ownerContainer: NSView? = enclosingScrollView ?? superview
+            if let ownerContainer, !hitView.isDescendant(of: ownerContainer) {
+                return false
+            }
         }
-        return nil
+
+        return true
     }
 }
 
@@ -340,6 +421,7 @@ struct NoteActionMenuPopoverView: View {
                         .font(PixelTheme.uiFont(size: 13.5, weight: .semibold))
                         .foregroundStyle(PixelTheme.ink)
                         .lineLimit(2)
+                        .accessibilityAddTraits(.isHeader)
 
                     Text("Na lixeira")
                         .font(PixelTheme.uiFont(size: 11, weight: .medium))
@@ -416,6 +498,7 @@ struct NoteActionMenuPopoverView: View {
         HStack(spacing: 8) {
             Text("Opções da nota")
                 .studioSectionHeader()
+                .accessibilityAddTraits(.isHeader)
 
             Spacer(minLength: 4)
 
@@ -453,6 +536,7 @@ struct NoteActionMenuPopoverView: View {
                 .font(.system(size: 11))
                 .foregroundStyle(PixelTheme.danger)
                 .padding(.top, 1)
+                .accessibilityHidden(true)
 
             Text(message)
                 .font(PixelTheme.uiFont(size: 11, weight: .medium))
@@ -480,6 +564,7 @@ struct NoteActionMenuPopoverView: View {
                 Text("Nome")
                     .font(PixelTheme.uiFont(size: 11, weight: .semibold))
                     .foregroundStyle(PixelTheme.popoverMuted)
+                    .accessibilityAddTraits(.isHeader)
 
                 HStack(spacing: 6) {
                     ZStack {
@@ -555,6 +640,7 @@ struct NoteActionMenuPopoverView: View {
                     Text("Emoji")
                         .font(PixelTheme.uiFont(size: 11, weight: .semibold))
                         .foregroundStyle(PixelTheme.popoverMuted)
+                        .accessibilityAddTraits(.isHeader)
 
                     Spacer(minLength: 4)
 
@@ -939,5 +1025,6 @@ private struct MoveDestinationRowButton: View {
         .disabled(destination.isDisabled)
         .onHover { isHovered = $0 }
         .accessibilityLabel(destination.isCurrent ? "\(destination.title), atual" : destination.title)
+        .accessibilityAddTraits(destination.isCurrent ? .isSelected : [])
     }
 }

@@ -593,6 +593,23 @@ final class NoteContextMenuTests: XCTestCase {
             XCTAssertEqual((error as? CocoaError)?.code, .managedObjectReferentialIntegrity)
         }
 
+        let deletedNote = Note(context: context)
+        deletedNote.id = UUID()
+        deletedNote.title = "Apagada"
+        deletedNote.content = ""
+        deletedNote.createdAt = Date()
+        deletedNote.updatedAt = Date()
+        deletedNote.isTrashed = false
+        deletedNote.pageCount = 1
+        try context.save()
+        context.delete(deletedNote)
+        XCTAssertTrue(deletedNote.isDeleted)
+
+        XCTAssertThrowsError(try viewModel.setEmoji("🎯", for: deletedNote)) { error in
+            XCTAssertEqual((error as? CocoaError)?.code, .managedObjectReferentialIntegrity)
+        }
+        try context.save()
+
         // Persist baseline emoji before simulating context.save() failure.
         try viewModel.setEmoji("🎨", for: noteB)
         let persistedUpdatedAt = noteB.updatedAt
@@ -794,5 +811,82 @@ final class NoteContextMenuTests: XCTestCase {
         XCTAssertEqual(trashModel.deleteActionTitle, "Excluir Definitivamente")
         XCTAssertEqual(trashModel.actions, [.restore, .deletePermanently])
         XCTAssertTrue(trashModel.moveDestinations.isEmpty)
+    }
+
+    // MARK: - 5. Secondary Click Detector Lifecycle & Occlusion
+
+    func testSecondaryClickDetectorLifecycleAndOcclusion() throws {
+        let registry = SecondaryClickMonitorRegistry.shared
+        let initialCount = registry.activeDetectorCount
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 420, height: 320),
+            styleMask: [.titled, .closable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        let rootView = NSView(frame: NSRect(x: 0, y: 0, width: 420, height: 320))
+        window.contentView = rootView
+
+        let cardHost = NSView(frame: NSRect(x: 20, y: 20, width: 200, height: 260))
+        rootView.addSubview(cardHost)
+
+        let detector = SecondaryClickDetectorView(frame: cardHost.bounds)
+        cardHost.addSubview(detector)
+
+        // Sibling overlay covering the right half of cardHost (simulates titlebar/sidebar overlap).
+        let occludingOverlay = NSView(frame: NSRect(x: 120, y: 20, width: 160, height: 260))
+        rootView.addSubview(occludingOverlay)
+
+        rootView.layoutSubtreeIfNeeded()
+
+        XCTAssertEqual(registry.activeDetectorCount, initialCount + 1)
+        XCTAssertTrue(registry.hasInstalledMonitor)
+
+        func makeMouseEvent(
+            type: NSEvent.EventType,
+            modifiers: NSEvent.ModifierFlags = [],
+            windowPoint: NSPoint
+        ) throws -> NSEvent {
+            try XCTUnwrap(
+                NSEvent.mouseEvent(
+                    with: type,
+                    location: windowPoint,
+                    modifierFlags: modifiers,
+                    timestamp: 0,
+                    windowNumber: window.windowNumber,
+                    context: nil,
+                    eventNumber: 0,
+                    clickCount: 1,
+                    pressure: 1
+                )
+            )
+        }
+
+        let clearPoint = NSPoint(x: 60, y: 100)
+        XCTAssertTrue(detector.shouldInterceptSecondaryClick(for: try makeMouseEvent(type: .rightMouseDown, windowPoint: clearPoint)))
+        XCTAssertTrue(detector.shouldInterceptSecondaryClick(for: try makeMouseEvent(type: .leftMouseDown, modifiers: [.control], windowPoint: clearPoint)))
+        XCTAssertFalse(detector.shouldInterceptSecondaryClick(for: try makeMouseEvent(type: .leftMouseDown, windowPoint: clearPoint)))
+
+        let occludedPoint = NSPoint(x: 160, y: 100)
+        XCTAssertFalse(detector.shouldInterceptSecondaryClick(for: try makeMouseEvent(type: .rightMouseDown, windowPoint: occludedPoint)))
+
+        detector.isHidden = true
+        XCTAssertFalse(detector.shouldInterceptSecondaryClick(for: try makeMouseEvent(type: .rightMouseDown, windowPoint: clearPoint)))
+        detector.isHidden = false
+
+        detector.removeFromSuperview()
+        XCTAssertEqual(registry.activeDetectorCount, initialCount)
+
+        do {
+            let orphan = SecondaryClickDetectorView(frame: NSRect(x: 0, y: 0, width: 40, height: 40))
+            registry.register(orphan)
+            XCTAssertEqual(registry.activeDetectorCount, initialCount + 1)
+        }
+
+        XCTAssertEqual(registry.activeDetectorCount, initialCount)
+        if initialCount == 0 {
+            XCTAssertFalse(registry.hasInstalledMonitor)
+        }
     }
 }

@@ -18,6 +18,7 @@ struct NotesView: View {
     @FocusState private var focusedMenuTriggerNoteID: UUID?
     @State private var activeMenuNoteID: UUID?
     @State private var pendingPanelFocusRestoreNoteID: UUID?
+    @State private var suppressNextFocusRestore = false
     @State private var actionAlert: NoteActionAlert?
 
     // 3-column adaptive grid
@@ -109,25 +110,33 @@ struct NotesView: View {
         }
         .background(PixelTheme.surface)
         .onChange(of: viewModel.selectedFilter) { _, _ in
-            activeMenuNoteID = nil
+            closeMenu(restoreFocus: false)
         }
         .onChange(of: viewModel.searchQuery) { _, _ in
-            activeMenuNoteID = nil
+            closeMenu(restoreFocus: false)
         }
         .onChange(of: viewModel.selectedNote) { _, _ in
-            activeMenuNoteID = nil
+            closeMenu(restoreFocus: false)
         }
         .onChange(of: isGridView) { _, _ in
-            activeMenuNoteID = nil
+            closeMenu(restoreFocus: false)
+        }
+        .onChange(of: isSearchFocused) { _, focused in
+            if focused {
+                closeMenu(restoreFocus: false)
+            }
         }
         .onChange(of: viewModel.notes) { _, notes in
             if let activeID = activeMenuNoteID,
                !notes.contains(where: { $0.id == activeID }) {
-                activeMenuNoteID = nil
+                closeMenu(restoreFocus: false)
             }
         }
         .onChange(of: activeMenuNoteID) { oldID, newID in
-            guard newID == nil,
+            let shouldSuppress = suppressNextFocusRestore
+            suppressNextFocusRestore = false
+            guard !shouldSuppress,
+                  newID == nil,
                   let closedNoteID = oldID,
                   pendingPanelFocusRestoreNoteID != closedNoteID else {
                 return
@@ -590,7 +599,7 @@ struct NotesView: View {
         openPanel.canChooseDirectories = false
         openPanel.canChooseFiles = true
 
-        openPanel.begin { response in
+        presentPanel(openPanel) { response in
             if response == .OK, let url = openPanel.url {
                 viewModel.importPDF(url: url)
             }
@@ -598,19 +607,33 @@ struct NotesView: View {
     }
 
     private func openNote(_ note: Note) {
-        activeMenuNoteID = nil
+        closeMenu(restoreFocus: false)
         withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
             viewModel.selectedNote = note
         }
     }
 
     private func toggleMenu(for note: Note) {
+        guard pendingPanelFocusRestoreNoteID == nil else { return }
         let noteID = note.id
-        activeMenuNoteID = (activeMenuNoteID == noteID) ? nil : noteID
+        if activeMenuNoteID == noteID {
+            closeMenu(restoreFocus: true)
+        } else {
+            suppressNextFocusRestore = false
+            activeMenuNoteID = noteID
+        }
     }
 
     private func openMenu(for note: Note) {
+        guard pendingPanelFocusRestoreNoteID == nil else { return }
+        suppressNextFocusRestore = false
         activeMenuNoteID = note.id
+    }
+
+    private func closeMenu(restoreFocus: Bool) {
+        guard activeMenuNoteID != nil else { return }
+        suppressNextFocusRestore = !restoreFocus
+        activeMenuNoteID = nil
     }
 
     private func menuPresentedBinding(for note: Note) -> Binding<Bool> {
@@ -619,6 +642,8 @@ struct NotesView: View {
             get: { activeMenuNoteID == noteID },
             set: { isPresented in
                 if isPresented {
+                    guard pendingPanelFocusRestoreNoteID == nil else { return }
+                    suppressNextFocusRestore = false
                     activeMenuNoteID = noteID
                 } else if activeMenuNoteID == noteID {
                     activeMenuNoteID = nil
@@ -630,6 +655,8 @@ struct NotesView: View {
     private func restoreFocusToTrigger(for noteID: UUID) {
         DispatchQueue.main.async {
             guard activeMenuNoteID == nil,
+                  pendingPanelFocusRestoreNoteID == nil,
+                  !isSearchFocused,
                   viewModel.selectedNote == nil,
                   viewModel.notes.contains(where: { $0.id == noteID }) else {
                 return
@@ -677,16 +704,25 @@ struct NotesView: View {
             },
             onClose: {
                 if activeMenuNoteID == noteID {
-                    activeMenuNoteID = nil
+                    closeMenu(restoreFocus: true)
                 }
             }
         )
     }
 
+    private func presentPanel(_ panel: NSSavePanel, completion: @escaping (NSApplication.ModalResponse) -> Void) {
+        if let hostWindow = NSApp.keyWindow ?? NSApp.mainWindow {
+            panel.beginSheetModal(for: hostWindow, completionHandler: completion)
+        } else {
+            panel.begin(completionHandler: completion)
+        }
+    }
+
     private func chooseCoverImage(for note: Note) {
+        guard pendingPanelFocusRestoreNoteID == nil else { return }
         let noteID = note.id
         pendingPanelFocusRestoreNoteID = noteID
-        activeMenuNoteID = nil
+        closeMenu(restoreFocus: false)
 
         let openPanel = NSOpenPanel()
         openPanel.allowedContentTypes = NoteCoverMedia.supportedStaticImageTypes
@@ -695,7 +731,7 @@ struct NotesView: View {
         openPanel.canChooseFiles = true
         openPanel.prompt = "Escolher Capa"
 
-        openPanel.begin { response in
+        presentPanel(openPanel) { response in
             defer {
                 pendingPanelFocusRestoreNoteID = nil
                 restoreFocusToTrigger(for: noteID)
@@ -713,7 +749,7 @@ struct NotesView: View {
     }
 
     private func removeCoverImage(for note: Note) {
-        activeMenuNoteID = nil
+        closeMenu(restoreFocus: true)
         do {
             try viewModel.removeCover(for: note)
         } catch {
@@ -725,16 +761,17 @@ struct NotesView: View {
     }
 
     private func exportPDF(for note: Note) {
+        guard pendingPanelFocusRestoreNoteID == nil else { return }
         let noteID = note.id
         pendingPanelFocusRestoreNoteID = noteID
-        activeMenuNoteID = nil
+        closeMenu(restoreFocus: false)
 
         let savePanel = NSSavePanel()
         savePanel.allowedContentTypes = [.pdf]
         savePanel.canCreateDirectories = true
         savePanel.nameFieldStringValue = note.suggestedPDFName
 
-        savePanel.begin { response in
+        presentPanel(savePanel) { response in
             defer {
                 pendingPanelFocusRestoreNoteID = nil
                 restoreFocusToTrigger(for: noteID)
