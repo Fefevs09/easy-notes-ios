@@ -24,6 +24,27 @@ public class Note: NSManagedObject {
     @NSManaged public var gridOriginX: Float
     @NSManaged public var gridOriginY: Float
 
+    @NSManaged public var coverMediaData: Data?
+    @NSManaged public var coverMediaType: String?
+    @NSManaged public var coverUpdatedAt: Date?
+
+    public var hasCustomCover: Bool {
+        guard let data = coverMediaData else { return false }
+        return !data.isEmpty
+    }
+
+    public var coverMedia: NoteCoverMedia? {
+        guard let data = coverMediaData, !data.isEmpty else { return nil }
+        if let typeIdentifier = coverMediaType, !typeIdentifier.isEmpty {
+            return NoteCoverMedia(
+                data: data,
+                contentTypeIdentifier: typeIdentifier,
+                kind: NoteCoverMediaKind.classify(contentTypeIdentifier: typeIdentifier)
+            )
+        }
+        return try? NoteCoverMedia.validated(data: data)
+    }
+
     public var suggestedPDFName: String {
         (title.isEmpty ? "Sem título" : title) + ".pdf"
     }

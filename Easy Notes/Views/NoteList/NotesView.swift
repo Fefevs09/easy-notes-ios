@@ -1,17 +1,15 @@
+import AppKit
 import SwiftUI
 import CoreData
 import PDFKit
 import UniformTypeIdentifiers
-
-/// Rasterized first-page covers keyed by note id + freshness. Shared across all
-/// cards so re-renders (every `loadNotes()`) reuse work instead of re-rasterizing.
-private let noteCoverCache = NSCache<NSString, NSImage>()
 
 struct NotesView: View {
     @EnvironmentObject var viewModel: NoteViewModel
 
     @AppStorage("easyNotes.libraryIsGridView") private var isGridView = true
     @FocusState private var isSearchFocused: Bool
+    @State private var coverErrorMessage: String?
 
     // 3-column adaptive grid
     private let columns = [
@@ -101,6 +99,14 @@ struct NotesView: View {
             .background(PixelTheme.surface)
         }
         .background(PixelTheme.surface)
+        .alert("Não foi possível atualizar a capa", isPresented: Binding(
+            get: { coverErrorMessage != nil },
+            set: { if !$0 { coverErrorMessage = nil } }
+        )) {
+            Button("OK") { coverErrorMessage = nil }
+        } message: {
+            Text(coverErrorMessage ?? "")
+        }
     }
 
     // MARK: - Editorial Header
@@ -557,6 +563,32 @@ struct NotesView: View {
         }
     }
 
+    private func chooseCoverImage(for note: Note) {
+        let openPanel = NSOpenPanel()
+        openPanel.allowedContentTypes = NoteCoverMedia.supportedStaticImageTypes
+        openPanel.allowsMultipleSelection = false
+        openPanel.canChooseDirectories = false
+        openPanel.canChooseFiles = true
+        openPanel.prompt = "Escolher Capa"
+
+        openPanel.begin { response in
+            guard response == .OK, let url = openPanel.url else { return }
+            do {
+                try viewModel.setCover(for: note, from: url)
+            } catch {
+                coverErrorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func removeCoverImage(for note: Note) {
+        do {
+            try viewModel.removeCover(for: note)
+        } catch {
+            coverErrorMessage = error.localizedDescription
+        }
+    }
+
     // MARK: - Context Menu builder
     @ViewBuilder
     private func contextMenuContent(for note: Note) -> some View {
@@ -569,6 +601,18 @@ struct NotesView: View {
                 viewModel.deleteNote(note)
             }
         } else {
+            Button(note.hasCustomCover ? "Trocar capa…" : "Escolher capa…") {
+                chooseCoverImage(for: note)
+            }
+
+            if note.hasCustomCover {
+                Button("Remover capa") {
+                    removeCoverImage(for: note)
+                }
+            }
+
+            Divider()
+
             Menu("Mover para...") {
                 Button("Notas Soltas") {
                     viewModel.moveNote(note, to: nil)
@@ -630,7 +674,7 @@ private func formatPortugueseRelativeDate(_ date: Date) -> String {
 
 // MARK: - Note Card Component View (Grid)
 struct NoteCardView: View {
-    let note: Note
+    @ObservedObject var note: Note
     @State private var isHovered = false
 
     var body: some View {
@@ -725,7 +769,7 @@ struct NoteCardView: View {
 
 // MARK: - Note List Row Card Component (List View)
 struct NoteListRowCardView: View {
-    let note: Note
+    @ObservedObject var note: Note
     @State private var isHovered = false
 
     var body: some View {
@@ -806,13 +850,49 @@ struct NoteListRowCardView: View {
 
 // MARK: - Note Thumbnail View Renderer
 struct NoteThumbnailView: View {
-    let note: Note
+    @ObservedObject var note: Note
     @State private var cover: NSImage?
 
-    var body: some View {
-        GeometryReader { geometry in
-            ZStack(alignment: .topLeading) {
+    private struct ThumbnailTaskID: Equatable {
+        let noteID: UUID
+        let updatedAt: Date
+        let coverUpdatedAt: Date?
+        let coverMediaType: String?
+        let hasCustomCover: Bool
+    }
 
+    var body: some View {
+        let taskID = ThumbnailTaskID(
+            noteID: note.id,
+            updatedAt: note.updatedAt,
+            coverUpdatedAt: note.coverUpdatedAt,
+            coverMediaType: note.coverMediaType,
+            hasCustomCover: note.hasCustomCover
+        )
+
+        Group {
+            if note.hasCustomCover {
+                NoteCoverView(note: note)
+            } else {
+                fallbackThumbnailBody
+            }
+        }
+        .task(id: taskID) {
+            if note.hasCustomCover {
+                cover = nil
+            } else {
+                cover = Self.pdfFallbackImage(for: note)
+            }
+        }
+    }
+
+    private var fallbackThumbnailBody: some View {
+        let sortedStrokes: [Stroke] = (note.strokes as? Set<Stroke>)?
+            .filter { $0.pageIndex == 0 }
+            .sorted { $0.createdAt < $1.createdAt } ?? []
+
+        return GeometryReader { _ in
+            ZStack(alignment: .topLeading) {
                 // First PDF page as the card cover (white while it renders)
                 if let cover = cover {
                     Image(nsImage: cover)
@@ -835,50 +915,56 @@ struct NoteThumbnailView: View {
                 }
 
                 // Draw vector paths if there are strokes on the first page
-                if let strokesSet = note.strokes as? Set<Stroke> {
-                    let sortedStrokes = strokesSet
-                        .filter { $0.pageIndex == 0 }
-                        .sorted { $0.createdAt < $1.createdAt }
-                    if !sortedStrokes.isEmpty {
-                        Canvas { context, size in
-                            // Scaling factors based on US Letter target coordinate space (612 x 792)
-                            let scaleX = size.width / 612.0
-                            let scaleY = size.height / 792.0
+                if !sortedStrokes.isEmpty {
+                    Canvas { context, size in
+                        // Scaling factors based on US Letter target coordinate space (612 x 792)
+                        let scaleX = size.width / 612.0
+                        let scaleY = size.height / 792.0
 
-                            context.scaleBy(x: scaleX, y: scaleY)
+                        context.scaleBy(x: scaleX, y: scaleY)
 
-                            for stroke in sortedStrokes {
-                                let points = deserializePoints(stroke.points)
-                                guard !points.isEmpty else { continue }
+                        for stroke in sortedStrokes {
+                            let points = deserializePoints(stroke.points)
+                            guard !points.isEmpty else { continue }
 
-                                var path = Path()
-                                path.move(to: points[0])
-                                for i in 1..<points.count {
-                                    path.addLine(to: points[i])
-                                }
-
-                                let strokeColor = Color(nsColor: NSColor(hex: stroke.color) ?? .black)
-                                context.stroke(
-                                    path,
-                                    with: .color(strokeColor),
-                                    style: StrokeStyle(lineWidth: CGFloat(stroke.width), lineCap: .round, lineJoin: .round)
-                                )
+                            var path = Path()
+                            path.move(to: points[0])
+                            for i in 1..<points.count {
+                                path.addLine(to: points[i])
                             }
+
+                            let strokeColor = Color(nsColor: NSColor(hex: stroke.color) ?? .black)
+                            context.stroke(
+                                path,
+                                with: .color(strokeColor),
+                                style: StrokeStyle(lineWidth: CGFloat(stroke.width), lineCap: .round, lineJoin: .round)
+                            )
                         }
-                        .background(Color.clear)
                     }
+                    .background(Color.clear)
+                }
+
+                // Clean placeholder when the note has no PDF page, text, or strokes
+                if cover == nil && note.content.isEmpty && sortedStrokes.isEmpty {
+                    Image(systemName: "doc.text")
+                        .font(.system(size: 16, weight: .regular))
+                        .foregroundColor(PixelTheme.muted.opacity(0.35))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                 }
             }
-        }
-        .task(id: note.updatedAt) {
-            cover = Self.coverImage(for: note)
         }
     }
 
     // MARK: - First-page cover renderer
-    private static func coverImage(for note: Note) -> NSImage? {
-        let key = "\(note.id.uuidString)-\(note.updatedAt.timeIntervalSince1970)" as NSString
-        if let cached = noteCoverCache.object(forKey: key) {
+    private static func pdfFallbackImage(for note: Note) -> NSImage? {
+        let token = "\(note.updatedAt.timeIntervalSince1970)::\(note.pdfData?.count ?? 0)"
+        let key = NoteCoverCache.cacheKey(
+            noteID: note.id,
+            kind: .pdfFallback,
+            token: token,
+            variant: "page0"
+        )
+        if let cached = NoteCoverCache.shared.image(forKey: key) {
             return cached
         }
         guard let data = note.pdfData,
@@ -887,7 +973,7 @@ struct NoteThumbnailView: View {
         }
         // 2× the card's ~150-point width keeps the raster crisp on Retina.
         let image = page.thumbnail(of: CGSize(width: 300, height: 405), for: .mediaBox)
-        noteCoverCache.setObject(image, forKey: key)
+        NoteCoverCache.shared.setImage(image, forKey: key, noteID: note.id)
         return image
     }
 

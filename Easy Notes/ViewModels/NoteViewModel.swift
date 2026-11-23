@@ -3,6 +3,7 @@ import CoreData
 import Combine
 import SwiftUI
 import PDFKit
+import UniformTypeIdentifiers
 
 public enum FilterType: Hashable {
     case all
@@ -53,6 +54,7 @@ public class NoteViewModel: ObservableObject {
     private let pdfDelegate = AnnotatedPDFDelegate()
     private var cachedPDFDocument: PDFDocument? = nil
     private var cachedPDFDocumentNoteId: UUID? = nil
+    public let coverCache: NoteCoverCache
     
     @Published public var notebooks: [Notebook] = []
     @Published public var notes: [Note] = [] // Loaded notes based on the active filter
@@ -92,8 +94,9 @@ public class NoteViewModel: ObservableObject {
         return nil
     }
     
-    public init(context: NSManagedObjectContext) {
+    public init(context: NSManagedObjectContext, coverCache: NoteCoverCache = .shared) {
         self.context = context
+        self.coverCache = coverCache
         loadNotebooks()
         loadNotes()
         
@@ -302,11 +305,13 @@ public class NoteViewModel: ObservableObject {
     }
     
     public func deleteNote(_ note: Note) {
+        var deletedNoteID: UUID?
         if note.isTrashed {
             // Delete DEFINITELY from database
             if selectedNote == note {
                 selectedNote = nil
             }
+            deletedNoteID = note.id
             context.delete(note)
         } else {
             // Move to Trash
@@ -316,6 +321,9 @@ public class NoteViewModel: ObservableObject {
             note.isTrashed = true
         }
         save()
+        if let deletedNoteID {
+            coverCache.invalidate(noteID: deletedNoteID)
+        }
         loadNotes()
         loadNotebooks()
     }
@@ -393,6 +401,7 @@ public class NoteViewModel: ObservableObject {
         note.updatedAt = Date()
         
         save()
+        coverCache.invalidate(noteID: note.id)
         loadNotes()
         objectWillChange.send()
     }
@@ -472,10 +481,14 @@ public class NoteViewModel: ObservableObject {
         request.predicate = NSPredicate(format: "isTrashed == true")
         do {
             let trashedNotes = try context.fetch(request)
+            let deletedIDs = trashedNotes.map(\.id)
             for note in trashedNotes {
                 context.delete(note)
             }
             save()
+            for id in deletedIDs {
+                coverCache.invalidate(noteID: id)
+            }
             loadNotes()
         } catch {
             print("Failed to empty trash: \(error)")
@@ -583,6 +596,119 @@ public class NoteViewModel: ObservableObject {
             throw error
         }
         loadNotes()
+    }
+
+    // MARK: - Note Covers (FEAT-03 / FEAT-02 Contract)
+
+    public func setCover(for note: Note, from url: URL) throws {
+        guard note.managedObjectContext === context, !note.isDeleted else {
+            throw NoteCoverError.invalidNote
+        }
+
+        let hasScopedAccess = url.startAccessingSecurityScopedResource()
+        defer {
+            if hasScopedAccess {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        let data: Data
+        do {
+            data = try Data(contentsOf: url)
+        } catch {
+            throw NoteCoverError.unreadableImage
+        }
+
+        let hintedType = Self.resolvedContentType(for: url)
+        try setCover(for: note, data: data, contentType: hintedType)
+    }
+
+    public func setCover(for note: Note, data: Data, contentType: UTType? = nil) throws {
+        guard note.managedObjectContext === context, !note.isDeleted else {
+            throw NoteCoverError.invalidNote
+        }
+
+        let media = try NoteCoverMedia.validated(data: data, contentType: contentType)
+
+        let previousData = note.coverMediaData
+        let previousType = note.coverMediaType
+        let previousCoverUpdatedAt = note.coverUpdatedAt
+        let previousUpdatedAt = note.updatedAt
+
+        let now = Date()
+        let coverTimestamp: Date
+        if let previousCoverUpdatedAt {
+            coverTimestamp = max(now, previousCoverUpdatedAt.addingTimeInterval(0.001))
+        } else {
+            coverTimestamp = now
+        }
+
+        note.coverMediaData = media.data
+        note.coverMediaType = media.contentTypeIdentifier
+        note.coverUpdatedAt = coverTimestamp
+        note.updatedAt = max(now, previousUpdatedAt.addingTimeInterval(0.001))
+
+        do {
+            try context.save()
+        } catch {
+            note.coverMediaData = previousData
+            note.coverMediaType = previousType
+            note.coverUpdatedAt = previousCoverUpdatedAt
+            note.updatedAt = previousUpdatedAt
+            throw NoteCoverError.persistenceFailed(error.localizedDescription)
+        }
+
+        coverCache.invalidate(noteID: note.id)
+        loadNotes()
+    }
+
+    public func removeCover(for note: Note) throws {
+        guard note.managedObjectContext === context, !note.isDeleted else {
+            throw NoteCoverError.invalidNote
+        }
+
+        guard note.coverMediaData != nil || note.coverMediaType != nil || note.coverUpdatedAt != nil else {
+            coverCache.invalidate(noteID: note.id)
+            return
+        }
+
+        let previousData = note.coverMediaData
+        let previousType = note.coverMediaType
+        let previousCoverUpdatedAt = note.coverUpdatedAt
+        let previousUpdatedAt = note.updatedAt
+
+        let now = Date()
+        note.coverMediaData = nil
+        note.coverMediaType = nil
+        note.coverUpdatedAt = nil
+        note.updatedAt = max(now, previousUpdatedAt.addingTimeInterval(0.001))
+
+        do {
+            try context.save()
+        } catch {
+            note.coverMediaData = previousData
+            note.coverMediaType = previousType
+            note.coverUpdatedAt = previousCoverUpdatedAt
+            note.updatedAt = previousUpdatedAt
+            throw NoteCoverError.persistenceFailed(error.localizedDescription)
+        }
+
+        coverCache.invalidate(noteID: note.id)
+        loadNotes()
+    }
+
+    private static func resolvedContentType(for url: URL) -> UTType? {
+        let genericTypes: Set<UTType> = [.data, .item, .content]
+        if !url.pathExtension.isEmpty,
+           let extType = UTType(filenameExtension: url.pathExtension),
+           !genericTypes.contains(extType) {
+            return extType
+        }
+        if let resourceType = try? url.resourceValues(forKeys: [.contentTypeKey]).contentType,
+           !genericTypes.contains(resourceType) {
+            return resourceType
+        }
+        return nil
     }
 
     public func updateNoteContent(note: Note, title: String, content: String) {
