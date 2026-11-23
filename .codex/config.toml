@@ -1,6 +1,8 @@
 
 
 
+
+
 # alethe-managed-hooks-start
 [[hooks.SubagentStart]]
 matcher = ".*"
@@ -8,7 +10,7 @@ matcher = ".*"
 [[hooks.SubagentStart.hooks]]
 type = "command"
 command = "true"
-commandWindows = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "/var/folders/1c/rtjt_2j1041_7k5_mvv9wpfw0000gn/T/alethe-codex-hook-forward-9123-KWSdzsd2uX7DuYjEwVgVg.ps1"'
+commandWindows = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "/var/folders/1c/rtjt_2j1041_7k5_mvv9wpfw0000gn/T/alethe-codex-hook-forward-9123-PEVtVvu7Xac_Qo_n_mbXu.ps1"'
 timeout = 5
 
 [[hooks.SubagentStop]]
@@ -17,7 +19,7 @@ matcher = ".*"
 [[hooks.SubagentStop.hooks]]
 type = "command"
 command = "true"
-commandWindows = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "/var/folders/1c/rtjt_2j1041_7k5_mvv9wpfw0000gn/T/alethe-codex-hook-forward-9123-KWSdzsd2uX7DuYjEwVgVg.ps1"'
+commandWindows = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "/var/folders/1c/rtjt_2j1041_7k5_mvv9wpfw0000gn/T/alethe-codex-hook-forward-9123-PEVtVvu7Xac_Qo_n_mbXu.ps1"'
 timeout = 5
 
 # alethe-managed-hooks-end
@@ -25,5 +27,5 @@ timeout = 5
 # alethe-managed-mcp-start
 [mcp_servers.alethe]
 command = "powershell.exe"
-args = ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "/var/folders/1c/rtjt_2j1041_7k5_mvv9wpfw0000gn/T/alethe-codex-mcp-bridge-9123-KWSdzsd2uX7DuYjEwVgVg.ps1"]
+args = ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "/var/folders/1c/rtjt_2j1041_7k5_mvv9wpfw0000gn/T/alethe-codex-mcp-bridge-9123-PEVtVvu7Xac_Qo_n_mbXu.ps1"]
 # alethe-managed-mcp-end
