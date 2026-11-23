@@ -27,6 +27,15 @@ public class Note: NSManagedObject {
     @NSManaged public var coverMediaData: Data?
     @NSManaged public var coverMediaType: String?
     @NSManaged public var coverUpdatedAt: Date?
+    @NSManaged public var emoji: String?
+
+    public var displayEmoji: String? {
+        guard let trimmed = emoji?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else {
+            return nil
+        }
+        return trimmed
+    }
 
     public var hasCustomCover: Bool {
         guard let data = coverMediaData else { return false }
