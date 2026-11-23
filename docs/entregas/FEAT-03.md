@@ -18,10 +18,10 @@ A migração foi comprovada em `NoteCoverTests.testLegacySQLiteStoreMigratesAndP
 
 A camada de mídia em `Easy Notes/Models/NoteCoverMedia.swift` separa validação, classificação, cache e renderização:
 
-- `NoteCoverMediaKind`: classifica mídias em `.staticImage` ou `.animatedGIF` (via `UTType.gif` e `CGImageSourceGetType`).
+- `NoteCoverMediaKind`: classifica mídias em `.staticImage` ou `.animatedGIF` exclusivamente a partir do tipo real detectado pelo ImageIO (`CGImageSourceGetType` / `UTType`), sem que um hint de extensão divergente sobrescreva bytes reais.
 - `NoteCoverMedia.validated(data:contentType:)`: valida via `CGImageSourceCreateWithData` que os bytes decodificam uma imagem real (`CGImageSourceGetCount > 0`, `CGImageSourceCreateImageAtIndex(source, 0, nil)` com dimensões positivas e conformidade a `UTType.image`, rejeitando PDFs, texto ou bytes corrompidos).
-- `NoteCoverCache`: substitui o `NSCache` isolado anterior em `NotesView.swift`, indexando chaves por `noteID` e `EntryKind` (`.customCover` e `.pdfFallback`) para que `invalidate(noteID:)` remova todas as miniaturas daquela nota.
-- `NoteCoverMediaRendering` e `NoteCoverRendererRegistry`: despacham a renderização por `NoteCoverMediaKind` para `NoteCoverView`. Hoje, `StaticImageCoverRenderer` atende `.staticImage` e também atua como fallback seguro (quadro 0) para `.animatedGIF`.
+- `NoteCoverCache`: cache LRU limitado (capacidade padrão de 128 entradas) e *thread-safe* via `NSLock`, indexando chaves por `noteID` e `EntryKind` (`.customCover` e `.pdfFallback`) para que `invalidate(noteID:)` e a evicção LRU limpem entradas e chaves de rastreamento sem vazamentos ou dependência de retenção não determinística do `NSCache`.
+- `NoteCoverMediaRendering` e `NoteCoverRendererRegistry`: marcados explicitamente com `@MainActor`, despacham a renderização por `NoteCoverMediaKind` para `NoteCoverView`. Hoje, `StaticImageCoverRenderer` atende `.staticImage` e também atua como fallback seguro (quadro 0) para `.animatedGIF`.
 
 Para habilitar reprodução animada de GIF em uma etapa futura sem alterar Core Data, `NoteViewModel` ou `NoteCardView`/`NoteListRowCardView`, basta implementar `AnimatedGIFCoverRenderer: NoteCoverMediaRendering` retornando `.view(AnyView(...))` e registrá-lo na inicialização do app:
 
@@ -69,8 +69,15 @@ xcodebuild "${args[@]}" -parallel-testing-enabled NO test
 ```
 
 - Build Debug: `** BUILD SUCCEEDED **`.
-- Suíte XCTest (`EasyNotesTests`): **35 testes executados, 0 falhas** (`NoteCoverTests`: 4, `NoteViewModelTests`: 14, `PDFExportTests`: 8, `PenColorTests`: 4, `ShapeObjectTests`: 5).
+- Suíte XCTest (`EasyNotesTests`): **36 testes executados, 0 falhas** (`NoteCoverTests`: 5, `NoteViewModelTests`: 14, `PDFExportTests`: 8, `PenColorTests`: 4, `ShapeObjectTests`: 5).
 - Sem avisos de ambiguidade de entidades Core Data durante os testes de migração ou persistência.
+
+## Ajustes pós-revisão (`051192a`)
+
+- Substituído o `NSCache` sem delegate de `NoteCoverCache` por cache LRU limitado (`capacity = 128`) protegido por `NSLock`, garantindo retenção determinística e remoção limpa de `keysByNoteID` tanto na evicção LRU quanto na invalidação.
+- Removida a sobrescrita de classificação GIF pelo hint `contentType`: somente o formato real decodificado pelo ImageIO define `.animatedGIF` vs `.staticImage`.
+- Explicitado `@MainActor` em `NoteCoverRenderedContent`, `NoteCoverMediaRendering`, `StaticImageCoverRenderer` e `NoteCoverRendererRegistry`, e `@unchecked Sendable` com `NSLock` em `NoteCoverCache`.
+- Propagado `viewModel.coverCache` por `NotesView`, `NoteCardView`, `NoteListRowCardView` e `NoteThumbnailView` (eliminando uso implícito de `.shared`), isolado o cache em `TestSupport.makeInMemoryViewModel()`, antecipada a validação de tipo não-imagem em `setCover(for:from:)` antes da leitura de disco e ampliada a cobertura de rollback/migração/evicção LRU em `NoteCoverTests`.
 
 ## Limitações conhecidas
 

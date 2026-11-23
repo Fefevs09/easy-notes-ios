@@ -523,6 +523,7 @@ final class NoteCoverTests: XCTestCase {
         let migratedTextNote = try XCTUnwrap(viewModel.notes.first { $0.id == textNoteUUID })
         XCTAssertEqual(migratedTextNote.title, "Nota Texto Legada")
         XCTAssertEqual(migratedTextNote.content, "Conteúdo preservado")
+        XCTAssertEqual(migratedTextNote.notebook?.id, notebookUUID)
         XCTAssertFalse(migratedTextNote.hasCustomCover)
         XCTAssertNil(migratedTextNote.coverMediaData)
         XCTAssertNil(migratedTextNote.coverMediaType)
@@ -530,12 +531,24 @@ final class NoteCoverTests: XCTestCase {
 
         let migratedPDFNote = try XCTUnwrap(viewModel.notes.first { $0.id == pdfNoteUUID })
         XCTAssertEqual(migratedPDFNote.title, "PDF Legado")
+        XCTAssertEqual(migratedPDFNote.notebook?.id, notebookUUID)
         XCTAssertEqual(migratedPDFNote.pdfData, importedPDFBytes)
         XCTAssertEqual(migratedPDFNote.gridStyle, "grid")
         XCTAssertEqual(migratedPDFNote.strokesArray.count, 1)
-        XCTAssertEqual(migratedPDFNote.strokesArray.first?.id, strokeUUID)
+        let migratedStroke = try XCTUnwrap(migratedPDFNote.strokesArray.first)
+        XCTAssertEqual(migratedStroke.id, strokeUUID)
+        XCTAssertEqual(migratedStroke.points, "12.0,24.0;48.0,96.0")
+        XCTAssertEqual(migratedStroke.color, "#6F52E0")
+        XCTAssertEqual(migratedStroke.width, 4.0)
+        XCTAssertEqual(migratedStroke.pageIndex, 0)
         XCTAssertEqual(migratedPDFNote.shapesArray.count, 1)
-        XCTAssertEqual(migratedPDFNote.shapesArray.first?.id, shapeUUID)
+        let migratedShape = try XCTUnwrap(migratedPDFNote.shapesArray.first)
+        XCTAssertEqual(migratedShape.id, shapeUUID)
+        XCTAssertEqual(migratedShape.kind, "rectangle")
+        XCTAssertEqual(migratedShape.points, "20.0,20.0;120.0,80.0")
+        XCTAssertEqual(migratedShape.strokeColor, "#2B2A33")
+        XCTAssertEqual(migratedShape.strokeWidth, 2.5)
+        XCTAssertEqual(migratedShape.pageIndex, 0)
         XCTAssertFalse(migratedPDFNote.hasCustomCover)
 
         // Apply a cover on the migrated store, reopen SQLite again, and verify persistence.
@@ -742,12 +755,27 @@ final class NoteCoverTests: XCTestCase {
         XCTAssertThrowsError(try viewModel.setCover(for: foreignNote, data: originalPNG, contentType: .png)) { error in
             XCTAssertEqual(error as? NoteCoverError, .invalidNote)
         }
+        XCTAssertThrowsError(try viewModel.removeCover(for: foreignNote)) { error in
+            XCTAssertEqual(error as? NoteCoverError, .invalidNote)
+        }
 
         // Force Core Data save() failure via an invalid pending Notebook in the context
-        // and confirm cover fields roll back completely.
+        // and confirm cover fields roll back completely for both setCover and removeCover.
         let invalidNotebook = Notebook(context: context)
         let jpegData = try makeJPEGData()
         XCTAssertThrowsError(try viewModel.setCover(for: note, data: jpegData, contentType: .jpeg)) { error in
+            guard case .persistenceFailed = error as? NoteCoverError else {
+                XCTFail("Expected persistenceFailed, got \(error)")
+                return
+            }
+        }
+
+        XCTAssertEqual(note.coverMediaData, originalPNG)
+        XCTAssertEqual(note.coverMediaType, UTType.png.identifier)
+        XCTAssertEqual(note.coverUpdatedAt, originalCoverUpdatedAt)
+        XCTAssertEqual(note.updatedAt, originalUpdatedAt)
+
+        XCTAssertThrowsError(try viewModel.removeCover(for: note)) { error in
             guard case .persistenceFailed = error as? NoteCoverError else {
                 XCTFail("Expected persistenceFailed, got \(error)")
                 return
@@ -775,11 +803,14 @@ final class NoteCoverTests: XCTestCase {
         let gifData = try makeGIFData()
 
         let pngMedia = try NoteCoverMedia.validated(data: pngData)
+        let disguisedPNGMedia = try NoteCoverMedia.validated(data: pngData, contentType: .gif)
         let jpegMedia = try NoteCoverMedia.validated(data: jpegData)
         let gifMedia = try NoteCoverMedia.validated(data: gifData)
 
         XCTAssertEqual(pngMedia.kind, .staticImage)
         XCTAssertEqual(pngMedia.contentTypeIdentifier, UTType.png.identifier)
+        XCTAssertEqual(disguisedPNGMedia.kind, .staticImage)
+        XCTAssertEqual(disguisedPNGMedia.contentTypeIdentifier, UTType.png.identifier)
         XCTAssertEqual(jpegMedia.kind, .staticImage)
         XCTAssertEqual(jpegMedia.contentTypeIdentifier, UTType.jpeg.identifier)
         XCTAssertEqual(gifMedia.kind, .animatedGIF)
@@ -833,8 +864,50 @@ final class NoteCoverTests: XCTestCase {
         XCTAssertEqual(reopened.coverMedia?.contentTypeIdentifier, UTType.gif.identifier)
         XCTAssertEqual(reopened.coverMedia?.data, gifData)
     }
+
+    // MARK: - 5. Deterministic LRU Cache & Key Eviction
+
+    func testCoverCacheEvictsLRUWithoutLeakingKeys() throws {
+        let cache = NoteCoverCache(capacity: 2)
+        let noteA = UUID()
+        let noteB = UUID()
+        let noteC = UUID()
+
+        let keyA = NoteCoverCache.cacheKey(noteID: noteA, kind: .customCover, token: "1")
+        let keyB = NoteCoverCache.cacheKey(noteID: noteB, kind: .customCover, token: "1")
+        let keyC = NoteCoverCache.cacheKey(noteID: noteC, kind: .customCover, token: "1")
+
+        cache.setImage(try makeSampleImage(), forKey: keyA, noteID: noteA)
+        cache.setImage(try makeSampleImage(), forKey: keyB, noteID: noteB)
+        XCTAssertEqual(cache.cachedEntryCount, 2)
+        XCTAssertTrue(cache.hasCachedEntries(for: noteA))
+        XCTAssertTrue(cache.hasCachedEntries(for: noteB))
+
+        // Accessing keyA promotes it to MRU, so inserting keyC evicts keyB.
+        XCTAssertNotNil(cache.image(forKey: keyA))
+        cache.setImage(try makeSampleImage(), forKey: keyC, noteID: noteC)
+
+        XCTAssertEqual(cache.cachedEntryCount, 2)
+        XCTAssertFalse(cache.hasCachedEntries(for: noteB))
+        XCTAssertNil(cache.image(forKey: keyB))
+        XCTAssertTrue(cache.hasCachedEntries(for: noteA))
+        XCTAssertNotNil(cache.image(forKey: keyA))
+        XCTAssertTrue(cache.hasCachedEntries(for: noteC))
+        XCTAssertNotNil(cache.image(forKey: keyC))
+
+        cache.invalidate(noteID: noteA)
+        XCTAssertEqual(cache.cachedEntryCount, 1)
+        XCTAssertFalse(cache.hasCachedEntries(for: noteA))
+        XCTAssertNil(cache.image(forKey: keyA))
+
+        cache.invalidateAll()
+        XCTAssertEqual(cache.cachedEntryCount, 0)
+        XCTAssertFalse(cache.hasCachedEntries(for: noteC))
+        XCTAssertNil(cache.image(forKey: keyC))
+    }
 }
 
+@MainActor
 private final class MockAnimatedGIFCoverRenderer: NoteCoverMediaRendering {
     let supportedKinds: Set<NoteCoverMediaKind> = [.animatedGIF]
     private(set) var renderCallCount = 0

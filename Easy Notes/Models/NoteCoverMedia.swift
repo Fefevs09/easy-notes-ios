@@ -112,7 +112,6 @@ public struct NoteCoverMedia: Equatable, Sendable {
 
         let isGIF = sourceUTType.conforms(to: .gif)
             || sourceIdentifier == UTType.gif.identifier
-            || (contentType?.conforms(to: .gif) == true)
 
         let kind: NoteCoverMediaKind = isGIF ? .animatedGIF : .staticImage
         let finalIdentifier = kind == .animatedGIF ? UTType.gif.identifier : sourceUTType.identifier
@@ -127,11 +126,13 @@ public struct NoteCoverMedia: Equatable, Sendable {
 
 // MARK: - Extensible Rendering Architecture
 
+@MainActor
 public enum NoteCoverRenderedContent {
     case image(NSImage)
     case view(AnyView)
 }
 
+@MainActor
 public protocol NoteCoverMediaRendering {
     var supportedKinds: Set<NoteCoverMediaKind> { get }
     func render(media: NoteCoverMedia, targetSize: CGSize) -> NoteCoverRenderedContent?
@@ -139,6 +140,7 @@ public protocol NoteCoverMediaRendering {
 
 /// Default renderer for static cover images. Also decodes frame 0 as a safe
 /// fallback for `.animatedGIF` media until an animated renderer is registered.
+@MainActor
 public struct StaticImageCoverRenderer: NoteCoverMediaRendering {
     public let supportedKinds: Set<NoteCoverMediaKind> = [.staticImage, .animatedGIF]
 
@@ -187,17 +189,19 @@ public struct StaticImageCoverRenderer: NoteCoverMediaRendering {
 ///         AnimatedGIFCoverRenderer(),
 ///         for: .animatedGIF
 ///     )
+@MainActor
 public final class NoteCoverRendererRegistry {
     public static let shared = NoteCoverRendererRegistry()
 
     private let defaultRenderer: any NoteCoverMediaRendering
     private var renderersByKind: [NoteCoverMediaKind: any NoteCoverMediaRendering]
 
-    public init(defaultRenderer: any NoteCoverMediaRendering = StaticImageCoverRenderer()) {
-        self.defaultRenderer = defaultRenderer
+    public init(defaultRenderer: (any NoteCoverMediaRendering)? = nil) {
+        let resolvedDefault = defaultRenderer ?? StaticImageCoverRenderer()
+        self.defaultRenderer = resolvedDefault
         self.renderersByKind = [
-            .staticImage: defaultRenderer,
-            .animatedGIF: defaultRenderer
+            .staticImage: resolvedDefault,
+            .animatedGIF: resolvedDefault
         ]
     }
 
@@ -233,20 +237,30 @@ public final class NoteCoverRendererRegistry {
 
 // MARK: - Invalidatable Thumbnail & Cover Cache
 
-public final class NoteCoverCache {
-    public static let shared = NoteCoverCache()
+public final class NoteCoverCache: @unchecked Sendable {
+    nonisolated public static let shared = NoteCoverCache()
 
     public enum EntryKind: String, Sendable {
         case customCover
         case pdfFallback
     }
 
-    private let cache = NSCache<NSString, NSImage>()
+    private struct CacheEntry {
+        let image: NSImage
+        let noteID: UUID
+    }
+
+    private let lock = NSLock()
+    private let capacity: Int
+    private var entries: [String: CacheEntry] = [:]
+    private var accessOrder: [String] = []
     private var keysByNoteID: [UUID: Set<String>] = [:]
 
-    public init() {}
+    nonisolated public init(capacity: Int = 128) {
+        self.capacity = max(1, capacity)
+    }
 
-    public static func cacheKey(
+    nonisolated public static func cacheKey(
         noteID: UUID,
         kind: EntryKind,
         token: String,
@@ -255,29 +269,77 @@ public final class NoteCoverCache {
         "\(noteID.uuidString)::\(kind.rawValue)::\(variant)::\(token)"
     }
 
-    public func image(forKey key: String) -> NSImage? {
-        cache.object(forKey: key as NSString)
+    nonisolated public func image(forKey key: String) -> NSImage? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let entry = entries[key] else { return nil }
+        if let index = accessOrder.firstIndex(of: key) {
+            accessOrder.remove(at: index)
+        }
+        accessOrder.append(key)
+        return entry.image
     }
 
-    public func setImage(_ image: NSImage, forKey key: String, noteID: UUID) {
-        cache.setObject(image, forKey: key as NSString)
+    nonisolated public func setImage(_ image: NSImage, forKey key: String, noteID: UUID) {
+        lock.lock()
+        defer { lock.unlock() }
+
+        if let existing = entries[key] {
+            removeTrackedKey(key, for: existing.noteID)
+            if let index = accessOrder.firstIndex(of: key) {
+                accessOrder.remove(at: index)
+            }
+        }
+
+        entries[key] = CacheEntry(image: image, noteID: noteID)
         keysByNoteID[noteID, default: []].insert(key)
-    }
+        accessOrder.append(key)
 
-    public func invalidate(noteID: UUID) {
-        guard let keys = keysByNoteID.removeValue(forKey: noteID) else { return }
-        for key in keys {
-            cache.removeObject(forKey: key as NSString)
+        while entries.count > capacity, !accessOrder.isEmpty {
+            let evictedKey = accessOrder.removeFirst()
+            if let evicted = entries.removeValue(forKey: evictedKey) {
+                removeTrackedKey(evictedKey, for: evicted.noteID)
+            }
         }
     }
 
-    public func invalidateAll() {
-        keysByNoteID.removeAll()
-        cache.removeAllObjects()
+    nonisolated public func invalidate(noteID: UUID) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let keys = keysByNoteID.removeValue(forKey: noteID) else { return }
+        for key in keys {
+            entries.removeValue(forKey: key)
+        }
+        accessOrder.removeAll { keys.contains($0) }
     }
 
-    public func hasCachedEntries(for noteID: UUID) -> Bool {
-        guard let keys = keysByNoteID[noteID] else { return false }
-        return keys.contains { cache.object(forKey: $0 as NSString) != nil }
+    nonisolated public func invalidateAll() {
+        lock.lock()
+        defer { lock.unlock() }
+        entries.removeAll()
+        accessOrder.removeAll()
+        keysByNoteID.removeAll()
+    }
+
+    nonisolated public func hasCachedEntries(for noteID: UUID) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return !(keysByNoteID[noteID]?.isEmpty ?? true)
+    }
+
+    nonisolated public var cachedEntryCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return entries.count
+    }
+
+    private func removeTrackedKey(_ key: String, for noteID: UUID) {
+        guard var keys = keysByNoteID[noteID] else { return }
+        keys.remove(key)
+        if keys.isEmpty {
+            keysByNoteID.removeValue(forKey: noteID)
+        } else {
+            keysByNoteID[noteID] = keys
+        }
     }
 }

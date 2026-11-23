@@ -612,6 +612,12 @@ public class NoteViewModel: ObservableObject {
             }
         }
 
+        let hintedType = Self.resolvedContentType(for: url)
+        let genericTypes: Set<UTType> = [.data, .item, .content]
+        if let hintedType, !genericTypes.contains(hintedType), !hintedType.conforms(to: .image) {
+            throw NoteCoverError.unsupportedMediaType(hintedType.identifier)
+        }
+
         let data: Data
         do {
             data = try Data(contentsOf: url)
@@ -619,7 +625,6 @@ public class NoteViewModel: ObservableObject {
             throw NoteCoverError.unreadableImage
         }
 
-        let hintedType = Self.resolvedContentType(for: url)
         try setCover(for: note, data: data, contentType: hintedType)
     }
 

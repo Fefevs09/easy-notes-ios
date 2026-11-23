@@ -40,7 +40,7 @@ enum TestSupport {
     /// NoteViewModel wired to it.
     static func makeInMemoryViewModel() -> (viewModel: NoteViewModel, context: NSManagedObjectContext) {
         let context = makeInMemoryContext()
-        let viewModel = NoteViewModel(context: context)
+        let viewModel = NoteViewModel(context: context, coverCache: NoteCoverCache())
         return (viewModel, context)
     }
 }

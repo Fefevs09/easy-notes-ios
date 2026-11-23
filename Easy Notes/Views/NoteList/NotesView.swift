@@ -45,7 +45,7 @@ struct NotesView: View {
                                         viewModel.selectedNote = note
                                     }
                                 }) {
-                                    NoteCardView(note: note)
+                                    NoteCardView(note: note, coverCache: viewModel.coverCache)
                                 }
                                 .buttonStyle(.plain)
                                 .contextMenu {
@@ -61,7 +61,7 @@ struct NotesView: View {
                                         viewModel.selectedNote = note
                                     }
                                 }) {
-                                    NoteListRowCardView(note: note)
+                                    NoteListRowCardView(note: note, coverCache: viewModel.coverCache)
                                 }
                                 .buttonStyle(.plain)
                                 .contextMenu {
@@ -675,6 +675,7 @@ private func formatPortugueseRelativeDate(_ date: Date) -> String {
 // MARK: - Note Card Component View (Grid)
 struct NoteCardView: View {
     @ObservedObject var note: Note
+    var coverCache: NoteCoverCache = .shared
     @State private var isHovered = false
 
     var body: some View {
@@ -684,7 +685,7 @@ struct NoteCardView: View {
                 PixelTheme.notebookBannerTint(for: note.notebook?.name)
 
                 // Inset crisp white page thumbnail
-                NoteThumbnailView(note: note)
+                NoteThumbnailView(note: note, coverCache: coverCache)
                     .background(PixelTheme.paper)
                     .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
                     .overlay(
@@ -770,6 +771,7 @@ struct NoteCardView: View {
 // MARK: - Note List Row Card Component (List View)
 struct NoteListRowCardView: View {
     @ObservedObject var note: Note
+    var coverCache: NoteCoverCache = .shared
     @State private var isHovered = false
 
     var body: some View {
@@ -779,7 +781,7 @@ struct NoteListRowCardView: View {
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .fill(PixelTheme.notebookBannerTint(for: note.notebook?.name))
 
-                NoteThumbnailView(note: note)
+                NoteThumbnailView(note: note, coverCache: coverCache)
                     .background(PixelTheme.paper)
                     .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
                     .shadow(color: Color.black.opacity(0.08), radius: 2, x: 0, y: 1)
@@ -851,6 +853,7 @@ struct NoteListRowCardView: View {
 // MARK: - Note Thumbnail View Renderer
 struct NoteThumbnailView: View {
     @ObservedObject var note: Note
+    var coverCache: NoteCoverCache = .shared
     @State private var cover: NSImage?
 
     private struct ThumbnailTaskID: Equatable {
@@ -872,7 +875,7 @@ struct NoteThumbnailView: View {
 
         Group {
             if note.hasCustomCover {
-                NoteCoverView(note: note)
+                NoteCoverView(note: note, cache: coverCache)
             } else {
                 fallbackThumbnailBody
             }
@@ -881,7 +884,7 @@ struct NoteThumbnailView: View {
             if note.hasCustomCover {
                 cover = nil
             } else {
-                cover = Self.pdfFallbackImage(for: note)
+                cover = Self.pdfFallbackImage(for: note, cache: coverCache)
             }
         }
     }
@@ -956,7 +959,7 @@ struct NoteThumbnailView: View {
     }
 
     // MARK: - First-page cover renderer
-    private static func pdfFallbackImage(for note: Note) -> NSImage? {
+    private static func pdfFallbackImage(for note: Note, cache: NoteCoverCache) -> NSImage? {
         let token = "\(note.updatedAt.timeIntervalSince1970)::\(note.pdfData?.count ?? 0)"
         let key = NoteCoverCache.cacheKey(
             noteID: note.id,
@@ -964,7 +967,7 @@ struct NoteThumbnailView: View {
             token: token,
             variant: "page0"
         )
-        if let cached = NoteCoverCache.shared.image(forKey: key) {
+        if let cached = cache.image(forKey: key) {
             return cached
         }
         guard let data = note.pdfData,
@@ -973,7 +976,7 @@ struct NoteThumbnailView: View {
         }
         // 2× the card's ~150-point width keeps the raster crisp on Retina.
         let image = page.thumbnail(of: CGSize(width: 300, height: 405), for: .mediaBox)
-        NoteCoverCache.shared.setImage(image, forKey: key, noteID: note.id)
+        cache.setImage(image, forKey: key, noteID: note.id)
         return image
     }
 
