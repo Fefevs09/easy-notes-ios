@@ -7,7 +7,6 @@ struct ContentView: View {
     @EnvironmentObject var viewModel: NoteViewModel
     @StateObject private var canvasVM = CanvasViewModel()
 
-    @State private var renameError: String?
     @State private var zoomScale: CGFloat = 1.0
     @State private var canvasViewportWidth: CGFloat = 0
     @State private var isSidebarOpen = true
@@ -43,13 +42,17 @@ struct ContentView: View {
         .onChange(of: viewModel.selectedNote?.pageCount) { _, pageCount in
             selectedPageIndex = min(max(0, selectedPageIndex), max(1, Int(pageCount ?? 1)) - 1)
         }
+        .onDisappear { viewModel.flushTitleEdits() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+            viewModel.flushTitleEdits()
+        }
         .alert("Falha ao renomear nota", isPresented: Binding(
-            get: { renameError != nil },
-            set: { if !$0 { renameError = nil } }
+            get: { viewModel.titleSaveError != nil },
+            set: { if !$0 { viewModel.titleSaveError = nil } }
         )) {
-            Button("OK") { renameError = nil }
+            Button("OK") { viewModel.titleSaveError = nil }
         } message: {
-            Text(renameError ?? "")
+            Text(viewModel.titleSaveError ?? "")
         }
     }
 
@@ -123,11 +126,7 @@ struct ContentView: View {
             TextField("Sem título", text: Binding(
                 get: { note.title },
                 set: { title in
-                    do {
-                        try viewModel.renameNote(note, to: title)
-                    } catch {
-                        renameError = error.localizedDescription
-                    }
+                    viewModel.editTitle(of: note, to: title)
                 }
             ))
                 .id(note.objectID)
@@ -138,7 +137,7 @@ struct ContentView: View {
 
             Spacer(minLength: 8)
 
-            Label("Salvo", systemImage: "checkmark")
+            Label(viewModel.hasPendingTitle ? "Salvando…" : "Salvo", systemImage: viewModel.hasPendingTitle ? "clock" : "checkmark")
                 .foregroundStyle(PixelTheme.success)
                 .fixedSize()
 

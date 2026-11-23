@@ -279,6 +279,24 @@ class NoteViewModelTests: XCTestCase {
         }
     }
 
+    func testEditorBatchesTitleEditsAndFlushesOnSelectionChange() throws {
+        viewModel.addNote(title: "Primeira")
+        let first = try XCTUnwrap(viewModel.selectedNote)
+        viewModel.addNote(title: "Segunda")
+        let second = try XCTUnwrap(viewModel.selectedNote)
+        let id = second.objectID
+        for title in ["N", "No", "Novo"] {
+            viewModel.editTitle(of: second, to: title)
+            XCTAssertEqual(second.suggestedPDFName, title + ".pdf")
+            XCTAssertEqual(second.committedValues(forKeys: ["title"])["title"] as? String, "Segunda")
+        }
+        viewModel.selectedNote = first
+        XCTAssertFalse(viewModel.hasPendingTitle)
+        XCTAssertEqual(first.title, "Primeira")
+        inMemoryContext.reset()
+        XCTAssertEqual((try inMemoryContext.existingObject(with: id) as? Note)?.title, "Novo")
+    }
+
     func testRenameEmptyTitleAndUnchangedTitle() throws {
         viewModel.addNote(title: "Título")
         let note = try XCTUnwrap(viewModel.selectedNote)
