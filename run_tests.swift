@@ -23,6 +23,7 @@ struct TestRunner {
         suite.addTest(XCTestSuite(forTestCaseClass: NoteViewModelTests.self))
         suite.addTest(XCTestSuite(forTestCaseClass: PDFExportTests.self))
         suite.addTest(XCTestSuite(forTestCaseClass: ShapeObjectTests.self))
+        suite.addTest(XCTestSuite(forTestCaseClass: PenColorTests.self))
         print("🏃 Running \(suite.testCaseCount) tests...")
         suite.run()
         let run = suite.testRun

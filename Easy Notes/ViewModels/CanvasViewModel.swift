@@ -129,8 +129,38 @@ public class CanvasViewModel: ObservableObject {
         .shape: .black
     ]
     
+    public var colorToolContext: PenColorToolContext {
+        PenColorToolContext(tool: activeTool)
+    }
+
     public init() {
         applyToolDefaults()
+    }
+
+    public func effectiveColor(_ color: Color, for tool: ToolType? = nil) -> Color {
+        let targetTool = tool ?? activeTool
+        let components = PenColorComponents.from(color)
+        if targetTool == .highlighter {
+            return components.withOpacity(Double(CanvasViewModel.highlighterOpacity)).swiftUIColor
+        }
+        return components.swiftUIColor
+    }
+
+    public func applyStrokeColor(_ color: Color) {
+        let resolved = effectiveColor(color)
+        strokeColor = resolved
+        if activeTool != .eraser && activeTool != .select {
+            toolColors[activeTool] = resolved
+        }
+    }
+
+    public func applyPresetColor(_ preset: Color) {
+        let targetOpacity = PenColorComponents.clampedOpacity(
+            PenColorComponents.from(strokeColor).opacity,
+            for: colorToolContext
+        )
+        let presetComponents = PenColorComponents.from(preset).withOpacity(targetOpacity)
+        applyStrokeColor(presetComponents.swiftUIColor)
     }
     
     public func selectTool(_ tool: ToolType) {
@@ -138,8 +168,8 @@ public class CanvasViewModel: ObservableObject {
         // width/color of its own; eraser has a size but no color).
         if activeTool != .select {
             toolWidths[activeTool] = strokeWidth
-            if activeTool != .highlighter && activeTool != .eraser {
-                toolColors[activeTool] = strokeColor
+            if activeTool != .eraser {
+                toolColors[activeTool] = effectiveColor(strokeColor, for: activeTool)
             }
         }
 
