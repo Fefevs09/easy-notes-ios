@@ -111,9 +111,17 @@ func makeShapeCGPath(kind: ShapeKind, points: [CGPoint]) -> CGPath {
 /// contrast layers follow the same curves and disconnected arrowhead wings.
 func drawShapeCreationDots(on path: CGPath, zoom: CGFloat, arrowWingLength: CGFloat? = nil, in context: CGContext) {
     guard zoom.isFinite, zoom > 0 else { return }
-    // At low zoom a whole wing can be shorter than one normal interval.
-    let spacing = min(10 / zoom, (arrowWingLength ?? .infinity) * 0.95)
+    let spacing = 10 / zoom
     let dots = path.copy(dashingWithPhase: 0, lengths: [spacing * 0.01, spacing * 0.99])
+    // Mark the segment endpoints when a short arrowhead fits between dots.
+    var endpoints: [CGPoint] = []
+    if let arrowWingLength, arrowWingLength <= spacing {
+        path.applyWithBlock { element in
+            if element.pointee.type == .addLineToPoint {
+                endpoints.append(element.pointee.points[0])
+            }
+        }
+    }
     context.saveGState()
     context.setLineCap(.round)
     for (width, color) in [(spacing * 0.5, NSColor.white), (spacing * 0.25, NSColor.black)] {
@@ -121,6 +129,11 @@ func drawShapeCreationDots(on path: CGPath, zoom: CGFloat, arrowWingLength: CGFl
         context.setLineWidth(width)
         context.addPath(dots)
         context.strokePath()
+        context.setFillColor(color.cgColor)
+        for end in endpoints {
+            context.fillEllipse(in: CGRect(x: end.x - width / 2, y: end.y - width / 2,
+                                           width: width, height: width))
+        }
     }
     context.restoreGState()
 }

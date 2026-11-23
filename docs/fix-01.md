@@ -8,7 +8,7 @@ Permitir posicionar e reconhecer linhas, setas, retângulos e elipses durante o 
 
 - `NoteViewModel.createBlankPDF` preenche a caixa da página com branco opaco. Documentos importados fornecem sua própria imagem de fundo. `PDFView.backgroundColor` colore a área externa à folha. A cor dinâmica de texto usada pela mira podia ficar branca no modo escuro.
 - A mira tem núcleo preto sobre páginas claras e branco sobre páginas escuras, com aro da cor oposta. A primeira consulta renderiza o PDF base em 16 × 16 amostras de cinza. A maioria dessas amostras determina a polaridade por página, guardada em cache com chave fraca. Nas regiões de luminosidade diferente da maioria, o aro fornece contraste local.
-- O overlay desenha a linha da cor escolhida e sobrepõe pontos com núcleo preto e aro branco. O tracejado com extremidades redondas segue o mesmo CGPath da forma final, inclusive os dois subcaminhos da cabeça da seta. O intervalo normal é de dez pontos de tela. Em setas pequenas ele diminui para que cada asa receba marcação.
+- O overlay desenha a linha da cor escolhida e sobrepõe pontos com núcleo preto e aro branco. O tracejado com extremidades redondas segue o mesmo CGPath da forma final, inclusive os dois subcaminhos da cabeça da seta. O intervalo normal é de dez pontos de tela. Em zoom baixo, cada extremidade da cabeça curta recebe uma marca extra, preservando o espaçamento e o diâmetro dos pontos da haste.
 
 ## Contratos
 
@@ -16,7 +16,7 @@ A prévia existe apenas durante a criação. O desenho usa coordenadas de págin
 
 ## Progresso e pendências
 
-A implementação foi integrada sobre origin/main em 3c39b62, isolada da outra feature presente no checkout principal. O código de produção foi encaminhado à revisão no commit 3fa51f9. A primeira tentativa de revisão parou por limite de uso. A segunda foi delegada ao GPT-6.2 Sol com esforço baixo.
+A implementação foi integrada sobre origin/main em 3c39b62, isolada da outra feature presente no checkout principal. O código de produção foi encaminhado à revisão no commit 3fa51f9. A primeira tentativa de revisão parou por limite de uso. A segunda, com GPT-6.2 Sol em esforço baixo, identificou encolhimento dos pontos na seta com zoom baixo. A correção mantém a escala dos pontos e cobre a haste da seta nos três níveis de zoom. A revisão confirmou o isolamento da exportação e destacou que a polaridade é por folha, com aro para conteúdo misto.
 
 Xcode 27.2, scheme Easy Notes, destino macOS. A base passou em 44 testes. O candidato passou em build e 47 testes, inclusive polaridade em duas páginas de PDF, pontos a 25%, 100% e 400% e asas da seta. Comando de reprodução:
 

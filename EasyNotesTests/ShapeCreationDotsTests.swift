@@ -37,19 +37,22 @@ final class ShapeCreationDotsTests: XCTestCase {
         let path = makeShapeCGPath(kind: kind, points: [
             CGPoint(x: 20 / zoom, y: 30 / zoom), CGPoint(x: 140 / zoom, y: endY / zoom)
         ])
-        drawShapeCreationDots(on: path, zoom: zoom, in: context)
+        let wing: CGFloat? = kind == .arrow ? min(max(12, 30 / zoom), 26) : nil
+        drawShapeCreationDots(on: path, zoom: zoom, arrowWingLength: wing, in: context)
         return context
     }
 
     func testLineHasDarkDotsLightRimsAndGapsAtEveryZoom() throws {
         for zoom: CGFloat in [0.25, 1, 4] {
-            let image = try bitmap(kind: .line, zoom: zoom)
-            let pixels = try XCTUnwrap(image.data).assumingMemoryBound(to: UInt8.self)
-            // Bitmap rows start at the top.
-            let row = (119 - 30) * image.bytesPerRow
-            XCTAssertLessThan(pixels[row + 40], 55)
-            XCTAssertGreaterThan(pixels[row + 41], 155)
-            XCTAssertEqual(Int(pixels[row + 45]), 128, accuracy: 1)
+            for kind: ShapeKind in [.line, .arrow] {
+                let image = try bitmap(kind: kind, zoom: zoom)
+                let pixels = try XCTUnwrap(image.data).assumingMemoryBound(to: UInt8.self)
+                // Bitmap rows start at the top.
+                let row = (119 - 30) * image.bytesPerRow
+                XCTAssertLessThan(pixels[row + 40], 55)
+                XCTAssertGreaterThan(pixels[row + 41], 155)
+                XCTAssertEqual(Int(pixels[row + 45]), 128, accuracy: 1)
+            }
         }
     }
 
