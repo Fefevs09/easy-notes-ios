@@ -4,15 +4,6 @@ struct NotePaperInspector: View {
     @ObservedObject var note: Note
     let title: String
 
-    init(note: Note, title: String) {
-        self.note = note
-        self.title = title
-    }
-
-    init(note: Note, title: String, paperStyle _: GridStyle, selectPaper _: (GridStyle) -> Void) {
-        self.init(note: note, title: title)
-    }
-
     private var relativeEditDate: String {
         note.updatedAt.formatted(.relative(presentation: .named).locale(Locale(identifier: "pt_BR")))
     }

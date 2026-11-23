@@ -68,7 +68,7 @@ struct ContentView: View {
 
             HStack(spacing: 0) {
                 if isSidebarOpen {
-                    editorSidebar(for: note, paperStyle: paperStyle)
+                    editorSidebar(for: note)
                 }
 
                 GeometryReader { proxy in
@@ -172,7 +172,7 @@ struct ContentView: View {
         }
     }
 
-    private func editorSidebar(for note: Note, paperStyle: GridStyle) -> some View {
+    private func editorSidebar(for note: Note) -> some View {
         VStack(spacing: 0) {
             HStack(spacing: 2) {
                 ForEach(SidebarTab.allCases, id: \.self) { tab in
@@ -201,9 +201,7 @@ struct ContentView: View {
 
             switch sidebarTab {
             case .note:
-                NotePaperInspector(note: note, title: activeTitle, paperStyle: paperStyle) { style in
-                    viewModel.setGridStyle(style, for: note)
-                }
+                NotePaperInspector(note: note, title: activeTitle)
             case .pages:
                 ThumbnailBarView(
                     noteVM: viewModel,
