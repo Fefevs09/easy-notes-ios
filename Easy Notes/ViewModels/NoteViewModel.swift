@@ -63,7 +63,15 @@ public class NoteViewModel: ObservableObject {
         }
     }
     
-    @Published public var selectedNote: Note? = nil
+    private var pendingTitleSave: DispatchWorkItem?
+    @Published private(set) var hasPendingTitle = false
+    @Published var titleSaveError: String?
+
+    @Published public var selectedNote: Note? = nil {
+        didSet {
+            if oldValue !== selectedNote { flushTitleEdits() }
+        }
+    }
     @Published public var searchQuery: String = "" {
         didSet {
             loadNotes()
@@ -210,6 +218,30 @@ public class NoteViewModel: ObservableObject {
         selectedFilter = .notebook(notebook)
     }
     
+    func editTitle(of note: Note, to title: String) {
+        guard note.managedObjectContext === context, !note.isDeleted, note.title != title else { return }
+        note.title = title
+        note.updatedAt = Date()
+        hasPendingTitle = true
+        pendingTitleSave?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.flushTitleEdits() }
+        pendingTitleSave = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
+    }
+
+    func flushTitleEdits() {
+        guard hasPendingTitle else { return }
+        pendingTitleSave?.cancel()
+        pendingTitleSave = nil
+        do {
+            if context.hasChanges { try context.save() }
+            hasPendingTitle = false
+            loadNotes()
+        } catch {
+            titleSaveError = error.localizedDescription
+        }
+    }
+
     public func renameNotebook(_ notebook: Notebook, to newName: String) {
         let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
@@ -533,6 +565,26 @@ public class NoteViewModel: ObservableObject {
         }
     }
     
+    public func renameNote(_ note: Note, to title: String) throws {
+        guard note.managedObjectContext === context, !note.isDeleted else {
+            throw CocoaError(.managedObjectReferentialIntegrity)
+        }
+        guard note.title != title else { return }
+
+        let previousTitle = note.title
+        let previousDate = note.updatedAt
+        note.title = title
+        note.updatedAt = Date()
+        do {
+            try context.save()
+        } catch {
+            note.title = previousTitle
+            note.updatedAt = previousDate
+            throw error
+        }
+        loadNotes()
+    }
+
     public func updateNoteContent(note: Note, title: String, content: String) {
         if note.title != title || note.content != content {
             note.title = title
