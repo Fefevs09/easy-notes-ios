@@ -9,7 +9,7 @@ public class CoreDataStack {
         return container.viewContext
     }
     
-    private init() {
+    static func makeModel() -> NSManagedObjectModel {
         let model = NSManagedObjectModel()
         
         // --- 1. Entity: Notebook ---
@@ -100,6 +100,27 @@ public class CoreDataStack {
         noteGridOriginYAttribute.isOptional = false
         noteGridOriginYAttribute.defaultValue = 0.0
 
+        let noteCoverMediaDataAttribute = NSAttributeDescription()
+        noteCoverMediaDataAttribute.name = "coverMediaData"
+        noteCoverMediaDataAttribute.attributeType = .binaryDataAttributeType
+        noteCoverMediaDataAttribute.isOptional = true
+        noteCoverMediaDataAttribute.allowsExternalBinaryDataStorage = true
+
+        let noteCoverMediaTypeAttribute = NSAttributeDescription()
+        noteCoverMediaTypeAttribute.name = "coverMediaType"
+        noteCoverMediaTypeAttribute.attributeType = .stringAttributeType
+        noteCoverMediaTypeAttribute.isOptional = true
+
+        let noteCoverUpdatedAtAttribute = NSAttributeDescription()
+        noteCoverUpdatedAtAttribute.name = "coverUpdatedAt"
+        noteCoverUpdatedAtAttribute.attributeType = .dateAttributeType
+        noteCoverUpdatedAtAttribute.isOptional = true
+
+        let noteEmojiAttribute = NSAttributeDescription()
+        noteEmojiAttribute.name = "emoji"
+        noteEmojiAttribute.attributeType = .stringAttributeType
+        noteEmojiAttribute.isOptional = true
+
         noteEntity.properties = [
             noteIdAttribute,
             noteTitleAttribute,
@@ -112,7 +133,11 @@ public class CoreDataStack {
             noteGridStyleAttribute,
             noteGridSpacingAttribute,
             noteGridOriginXAttribute,
-            noteGridOriginYAttribute
+            noteGridOriginYAttribute,
+            noteCoverMediaDataAttribute,
+            noteCoverMediaTypeAttribute,
+            noteCoverUpdatedAtAttribute,
+            noteEmojiAttribute
         ]
         
         // --- 3. Entity: Stroke ---
@@ -286,7 +311,11 @@ public class CoreDataStack {
         // --- 5. Configure Model ---
         model.entities = [notebookEntity, noteEntity, strokeEntity, shapeEntity]
         
-        container = NSPersistentContainer(name: "EasyNotesModel", managedObjectModel: model)
+        return model
+    }
+
+    private init() {
+        container = NSPersistentContainer(name: "EasyNotesModel", managedObjectModel: Self.makeModel())
         if let description = container.persistentStoreDescriptions.first {
             description.shouldMigrateStoreAutomatically = true
             description.shouldInferMappingModelAutomatically = true
