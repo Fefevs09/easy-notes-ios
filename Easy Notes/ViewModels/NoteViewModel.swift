@@ -533,6 +533,26 @@ public class NoteViewModel: ObservableObject {
         }
     }
     
+    public func renameNote(_ note: Note, to title: String) throws {
+        guard note.managedObjectContext === context, !note.isDeleted else {
+            throw CocoaError(.managedObjectReferentialIntegrity)
+        }
+        guard note.title != title else { return }
+
+        let previousTitle = note.title
+        let previousDate = note.updatedAt
+        note.title = title
+        note.updatedAt = Date()
+        do {
+            try context.save()
+        } catch {
+            note.title = previousTitle
+            note.updatedAt = previousDate
+            throw error
+        }
+        loadNotes()
+    }
+
     public func updateNoteContent(note: Note, title: String, content: String) {
         if note.title != title || note.content != content {
             note.title = title
