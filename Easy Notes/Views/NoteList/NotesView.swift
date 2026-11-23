@@ -914,21 +914,25 @@ struct NoteCardView<PopoverContent: View>: View {
                 VStack(alignment: .leading, spacing: 0) {
                     // Top preview banner
                     ZStack(alignment: .topLeading) {
-                        PixelTheme.notebookBannerTint(for: note.notebook?.name)
+                        if note.hasCustomCover {
+                            Color.clear
+                        } else {
+                            PixelTheme.notebookBannerTint(for: note.notebook?.name)
 
-                        // Inset crisp white page thumbnail
-                        NoteThumbnailView(note: note, coverCache: coverCache)
-                            .background(PixelTheme.paper)
-                            .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                    .strokeBorder(Color.black.opacity(0.06), lineWidth: 0.5)
-                            )
-                            .shadow(color: Color.black.opacity(0.08), radius: 5, x: 0, y: 2)
-                            .aspectRatio(1.0 / 1.32, contentMode: .fit)
-                            .padding(.vertical, 14)
-                            .padding(.horizontal, 18)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                            // Inset crisp white page thumbnail
+                            NoteThumbnailView(note: note, coverCache: coverCache)
+                                .background(PixelTheme.paper)
+                                .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                        .strokeBorder(Color.black.opacity(0.06), lineWidth: 0.5)
+                                )
+                                .shadow(color: Color.black.opacity(0.08), radius: 5, x: 0, y: 2)
+                                .aspectRatio(1.0 / 1.32, contentMode: .fit)
+                                .padding(.vertical, 14)
+                                .padding(.horizontal, 18)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                        }
 
                         if note.pageCount > 1 {
                             Text("PDF")
@@ -951,9 +955,11 @@ struct NoteCardView<PopoverContent: View>: View {
                     .frame(height: 150)
                     .clipped()
 
-                    Rectangle()
-                        .fill(PixelTheme.border.opacity(0.6))
-                        .frame(height: 1)
+                    if !note.hasCustomCover {
+                        Rectangle()
+                            .fill(PixelTheme.border.opacity(0.6))
+                            .frame(height: 1)
+                    }
 
                     // Bottom metadata area
                     VStack(alignment: .leading, spacing: 8) {
@@ -966,7 +972,7 @@ struct NoteCardView<PopoverContent: View>: View {
 
                             Text(displayTitle)
                                 .font(PixelTheme.uiFont(size: 14, weight: .semibold))
-                                .foregroundColor(PixelTheme.ink)
+                                .foregroundColor(note.hasCustomCover ? .white : PixelTheme.ink)
                                 .lineLimit(1)
 
                             Spacer(minLength: 4)
@@ -980,19 +986,36 @@ struct NoteCardView<PopoverContent: View>: View {
                         HStack(alignment: .center, spacing: 8) {
                             Text(formatPortugueseRelativeDate(note.updatedAt))
                                 .font(PixelTheme.uiFont(size: 11.5))
-                                .foregroundColor(PixelTheme.muted)
+                                .foregroundColor(note.hasCustomCover ? .white.opacity(0.92) : PixelTheme.muted)
                                 .lineLimit(1)
 
                             Spacer(minLength: 6)
 
                             Text(note.notebook?.name ?? "Notas Soltas")
                                 .font(PixelTheme.uiFont(size: 11.5, weight: .medium))
-                                .foregroundColor(PixelTheme.muted)
+                                .foregroundColor(note.hasCustomCover ? .white.opacity(0.92) : PixelTheme.muted)
                                 .lineLimit(1)
                         }
                     }
                     .padding(14)
-                    .background(PixelTheme.paper)
+                }
+                .background {
+                    if note.hasCustomCover {
+                        NoteCoverView(note: note, cache: coverCache)
+                            .overlay(alignment: .bottom) {
+                                LinearGradient(
+                                    stops: [
+                                        .init(color: .clear, location: 0),
+                                        .init(color: .black.opacity(0.82), location: 0.58),
+                                        .init(color: .black.opacity(0.95), location: 1)
+                                    ],
+                                    startPoint: .top, endPoint: .bottom
+                                )
+                                .frame(height: 118)
+                            }
+                    } else {
+                        PixelTheme.paper
+                    }
                 }
                 .contentShape(Rectangle())
             }
@@ -1011,7 +1034,12 @@ struct NoteCardView<PopoverContent: View>: View {
                 onToggleMenu: onToggleMenu,
                 popoverContent: popoverContent
             )
-            .padding(.top, 162)
+            .background {
+                if note.hasCustomCover {
+                    RoundedRectangle(cornerRadius: PixelTheme.compactRadius).fill(PixelTheme.paper)
+                }
+            }
+            .padding(.top, note.hasCustomCover ? 10 : 162)
             .padding(.trailing, 10)
         }
         .clipShape(RoundedRectangle(cornerRadius: PixelTheme.cardRadius, style: .continuous))
