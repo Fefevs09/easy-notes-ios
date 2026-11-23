@@ -294,19 +294,46 @@ class AnnotatedPDFDelegate: NSObject, PDFDocumentDelegate {
 /// main thread and the PDFView and its overlays always share the same tool state.
 private var _toolCursorCache: (signature: String, cursor: NSCursor)?
 
+// The base PDF is immutable while editing. Sample once per page, excluding
+// transient overlays. White represents unpainted areas of the paper.
+private let darkPaperCache = NSMapTable<PDFPage, NSNumber>.weakToStrongObjects()
+
+func shapePaperIsDark(_ page: PDFPage?) -> Bool {
+    guard let page, let pdf = page.pageRef else { return false }
+    if let cached = darkPaperCache.object(forKey: page) { return cached.boolValue }
+    let side = 16
+    guard let context = CGContext(data: nil, width: side, height: side,
+                                  bitsPerComponent: 8, bytesPerRow: side,
+                                  space: CGColorSpaceCreateDeviceGray(),
+                                  bitmapInfo: CGImageAlphaInfo.none.rawValue),
+          let data = context.data else { return false }
+    let bounds = CGRect(x: 0, y: 0, width: side, height: side)
+    context.setFillColor(gray: 1, alpha: 1)
+    context.fill(bounds)
+    context.concatenate(pdf.getDrawingTransform(.cropBox, rect: bounds, rotate: 0,
+                                                preserveAspectRatio: false))
+    context.drawPDFPage(pdf)
+    let pixels = UnsafeBufferPointer(start: data.assumingMemoryBound(to: UInt8.self),
+                                     count: side * side)
+    let dark = pixels.filter { $0 < 118 }.count > pixels.count / 2
+    darkPaperCache.setObject(NSNumber(value: dark), forKey: page)
+    return dark
+}
+
 /// The NSCursor for the active drawing tool, or `nil` when no drawing cursor
 /// applies (reading mode or the `.select` tool — callers should fall back to the
 /// system arrow). Shared by both the PDFView and the page overlays.
-func toolCursor(for canvasVM: CanvasViewModel, zoom: CGFloat) -> NSCursor? {
+func toolCursor(for canvasVM: CanvasViewModel, zoom: CGFloat, page: PDFPage? = nil) -> NSCursor? {
     guard canvasVM.isDrawingMode, canvasVM.activeTool != .select else { return nil }
 
-    let signature = "\(canvasVM.activeTool.rawValue)|\(canvasVM.strokeColor)|\(canvasVM.strokeWidth)|\(zoom)"
+    let darkPaper = canvasVM.activeTool == .shape && shapePaperIsDark(page)
+    let signature = "\(canvasVM.activeTool.rawValue)|\(canvasVM.strokeColor)|\(canvasVM.strokeWidth)|\(zoom)|\(darkPaper)"
     if let cached = _toolCursorCache, cached.signature == signature { return cached.cursor }
 
     let cursorImage: NSImage
     switch canvasVM.activeTool {
     case .shape:
-        cursorImage = NSImage.createShapeCrosshairImage()
+        cursorImage = NSImage.createShapeCrosshairImage(darkPaper: darkPaper)
     case .eraser:
         // Erase radius in page space is canvasVM.strokeWidth (see eraseAt);
         // footprint is the diameter, scaled to match the current zoom.
@@ -340,7 +367,10 @@ class NSPDFAnnotationView: PDFView {
 
     private func drawingCursor() -> NSCursor? {
         guard let canvasVM = canvasVM else { return nil }
-        return toolCursor(for: canvasVM, zoom: currentZoom)
+        let hoveredPage = canvasVM.activeTool == .shape ? window.flatMap {
+            page(for: convert($0.mouseLocationOutsideOfEventStream, from: nil), nearest: false)
+        } : nil
+        return toolCursor(for: canvasVM, zoom: currentZoom, page: hoveredPage)
     }
 
     override func resetCursorRects() {
@@ -383,6 +413,7 @@ class NSPDFAnnotationView: PDFView {
 
 class PageDrawingCanvas: NSView {
     let pageIndex: Int
+    weak var paperPage: PDFPage?
     weak var noteVM: NoteViewModel?
     weak var canvasVM: CanvasViewModel?
 
@@ -493,7 +524,7 @@ class PageDrawingCanvas: NSView {
     /// PDFView uses).
     private func currentToolCursor() -> NSCursor {
         guard let canvasVM = canvasVM else { return .arrow }
-        return toolCursor(for: canvasVM, zoom: currentZoom) ?? .arrow
+        return toolCursor(for: canvasVM, zoom: currentZoom, page: paperPage) ?? .arrow
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -974,6 +1005,7 @@ class AnnotatedPDFOverlayProvider: NSObject, PDFPageOverlayViewProvider {
         let pageIndex = doc.index(for: page)
 
         if let existing = overlays[pageIndex] {
+            existing.paperPage = page
             existing.noteVM = noteVM
             existing.canvasVM = canvasVM
             existing.currentZoom = zoom
@@ -981,6 +1013,7 @@ class AnnotatedPDFOverlayProvider: NSObject, PDFPageOverlayViewProvider {
         }
 
         let canvas = PageDrawingCanvas(pageIndex: pageIndex, noteVM: noteVM, canvasVM: canvasVM)
+        canvas.paperPage = page
         canvas.currentZoom = zoom
         overlays[pageIndex] = canvas
         return canvas
