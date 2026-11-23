@@ -33,6 +33,13 @@ final class NewNoteTests: XCTestCase {
                 let note = try XCTUnwrap(model.selectedNote)
                 XCTAssertEqual(note.notebook, notebook)
                 XCTAssertEqual(note.pageCount, 1)
+                if paper == .grid {
+                    let center = CGPoint(x: CGFloat(note.gridOriginX), y: CGFloat(note.gridOriginY))
+                    XCTAssertEqual(center, orientation.pageCenter)
+                    model.setGridStyle(.none, for: note)
+                    model.setGridStyle(.grid, for: note)
+                    XCTAssertEqual(CGPoint(x: CGFloat(note.gridOriginX), y: CGFloat(note.gridOriginY)), center)
+                }
                 model.addBlankPage()
                 context.refresh(note, mergeChanges: false)
                 XCTAssertEqual(note.gridStyle, paper.rawValue)

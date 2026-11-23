@@ -978,9 +978,11 @@ struct NoteCardView<PopoverContent: View>: View {
                             Spacer(minLength: 4)
 
                             // Reserves space for the sibling ellipsis button without nesting Buttons.
-                            Color.clear
-                                .frame(width: 26, height: 22)
-                                .accessibilityHidden(true)
+                            if !note.hasCustomCover {
+                                Color.clear
+                                    .frame(width: 26, height: 22)
+                                    .accessibilityHidden(true)
+                            }
                         }
 
                         HStack(alignment: .center, spacing: 8) {
@@ -1232,7 +1234,7 @@ struct NoteThumbnailView: View {
                 if let cover = cover {
                     Image(nsImage: cover)
                         .resizable()
-                        .aspectRatio(contentMode: .fill)
+                        .aspectRatio(contentMode: .fit)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .clipped()
                 }
@@ -1250,7 +1252,7 @@ struct NoteThumbnailView: View {
                 }
 
                 // Draw vector paths if there are strokes on the first page
-                if !sortedStrokes.isEmpty {
+                if cover == nil && !sortedStrokes.isEmpty {
                     Canvas { context, size in
                         // Scaling factors based on US Letter target coordinate space (612 x 792)
                         let scaleX = size.width / 612.0
@@ -1306,8 +1308,25 @@ struct NoteThumbnailView: View {
               let page = PDFDocument(data: data)?.page(at: 0) else {
             return nil
         }
-        // 2× the card's ~150-point width keeps the raster crisp on Retina.
-        let image = page.thumbnail(of: CGSize(width: 300, height: 405), for: .mediaBox)
+        let bounds = page.bounds(for: .mediaBox)
+        guard bounds.width > 0, bounds.height > 0 else { return nil }
+        let scale = min(300 / bounds.width, 405 / bounds.height)
+        let width = max(1, Int((bounds.width * scale).rounded()))
+        let height = max(1, Int((bounds.height * scale).rounded()))
+        guard let bitmap = CGContext(data: nil, width: width, height: height,
+                                     bitsPerComponent: 8, bytesPerRow: 0,
+                                     space: CGColorSpaceCreateDeviceRGB(),
+                                     bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        bitmap.scaleBy(x: CGFloat(width) / bounds.width, y: CGFloat(height) / bounds.height)
+        bitmap.translateBy(x: -bounds.minX, y: -bounds.minY)
+        bitmap.setFillColor(CGColor(gray: 1, alpha: 1))
+        bitmap.fill(bounds)
+        page.draw(with: .mediaBox, to: bitmap)
+        renderGrid(for: note, in: bounds, into: bitmap)
+        renderShapes(for: note, pageIndex: 0, into: bitmap)
+        renderStrokes(for: note, pageIndex: 0, into: bitmap)
+        guard let pixels = bitmap.makeImage() else { return nil }
+        let image = NSImage(cgImage: pixels, size: bounds.size)
         cache.setImage(image, forKey: key, noteID: note.id)
         return image
     }

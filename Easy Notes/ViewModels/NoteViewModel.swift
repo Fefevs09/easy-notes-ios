@@ -17,6 +17,8 @@ public enum NoteOrientation: String, CaseIterable {
     case portrait = "Vertical"
     case landscape = "Horizontal"
 
+    var pageCenter: CGPoint { CGPoint(x: pageSize.width / 2, y: pageSize.height / 2) }
+
     var pageSize: CGSize {
         switch self {
         case .portrait: CGSize(width: 612, height: 792)
@@ -306,6 +308,10 @@ public class NoteViewModel: ObservableObject {
         note.updatedAt = Date()
         note.isTrashed = false
         note.gridStyle = paper.rawValue
+        if paper != .none {
+            note.gridOriginX = Float(orientation.pageCenter.x)
+            note.gridOriginY = Float(orientation.pageCenter.y)
+        }
         note.pdfData = createBlankPDF(pageCount: 1, size: orientation.pageSize)
         note.pageCount = 1
         

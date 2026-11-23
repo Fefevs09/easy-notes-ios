@@ -38,7 +38,7 @@ struct NewNoteSheet: View {
                 let page = draft.orientation.pageSize
                 context.withCGContext { cg in
                     cg.scaleBy(x: size.width / page.width, y: size.height / page.height)
-                    renderGrid(style: draft.paper, spacing: 24, origin: .zero,
+                    renderGrid(style: draft.paper, spacing: 24, origin: draft.orientation.pageCenter,
                                in: CGRect(origin: .zero, size: page), into: cg)
                 }
             }
