@@ -1293,7 +1293,7 @@ struct NoteThumbnailView: View {
     }
 
     // MARK: - First-page cover renderer
-    private static func pdfFallbackImage(for note: Note, cache: NoteCoverCache) -> NSImage? {
+    static func pdfFallbackImage(for note: Note, cache: NoteCoverCache) -> NSImage? {
         let token = "\(note.updatedAt.timeIntervalSince1970)::\(note.pdfData?.count ?? 0)"
         let key = NoteCoverCache.cacheKey(
             noteID: note.id,

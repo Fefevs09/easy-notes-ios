@@ -59,6 +59,27 @@ final class NoteCoverTests: XCTestCase {
         XCTFail("A imagem violeta deveria alcançar as duas laterais do cartão.")
     }
 
+    func testLibraryThumbnailIncludesRightEdgeOfLandscapePage() throws {
+        let (model, context) = TestSupport.makeInMemoryViewModel()
+        model.addNote(orientation: .landscape)
+        let note = try XCTUnwrap(model.selectedNote)
+        let stroke = Stroke(context: context)
+        stroke.id = UUID()
+        stroke.createdAt = Date()
+        stroke.pageIndex = 0
+        stroke.color = "#FF0000"
+        stroke.points = "700,260;700,352"
+        stroke.width = 20
+        stroke.note = note
+
+        let image = try XCTUnwrap(NoteThumbnailView.pdfFallbackImage(for: note, cache: NoteCoverCache()))
+        let cgImage = try XCTUnwrap(image.cgImage(forProposedRect: nil, context: nil, hints: nil))
+        let bitmap = NSBitmapImageRep(cgImage: cgImage)
+        let sample = try XCTUnwrap(bitmap.colorAt(x: bitmap.pixelsWide * 700 / 792,
+                                                  y: bitmap.pixelsHigh / 2)?.usingColorSpace(.sRGB))
+        XCTAssertGreaterThan(sample.redComponent - sample.greenComponent, 0.6)
+    }
+
     // MARK: - Helpers
 
     private func makeTempDirectory() throws -> URL {
