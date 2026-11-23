@@ -86,15 +86,6 @@ struct ContentView: View {
                         canvasViewportWidth = width
                     }
                 }
-
-                if note.pageCount > 1 {
-                    EditorAnnotationsSidebar(note: note, selectedPageIndex: selectedPageIndex)
-                        .frame(width: 230)
-                        .background(PixelTheme.surface)
-                        .overlay(alignment: .leading) {
-                            Rectangle().fill(PixelTheme.border).frame(width: 1)
-                        }
-                }
             }
 
             EditorFooterBar(
