@@ -67,6 +67,10 @@ private func interpolate(_ a: CGPoint, _ b: CGPoint, steps: Int) -> [CGPoint] {
     return pts
 }
 
+private func arrowHeadLength(from a: CGPoint, to b: CGPoint) -> CGFloat {
+    min(max(12, hypot(b.x - a.x, b.y - a.y) * 0.25), 26)
+}
+
 /// Builds the stroke/fill path for a shape from its control points. Used both
 /// on screen (via the overlay's CGContext) and in PDF export.
 func makeShapeCGPath(kind: ShapeKind, points: [CGPoint]) -> CGPath {
@@ -82,7 +86,7 @@ func makeShapeCGPath(kind: ShapeKind, points: [CGPoint]) -> CGPath {
     case .arrow:
         path.move(to: a); path.addLine(to: b)
         let angle = atan2(b.y - a.y, b.x - a.x)
-        let head = min(max(12.0, hypot(b.x - a.x, b.y - a.y) * 0.25), 26.0)
+        let head = arrowHeadLength(from: a, to: b)
         let left = CGPoint(x: b.x - head * cos(angle - .pi / 7),
                            y: b.y - head * sin(angle - .pi / 7))
         let right = CGPoint(x: b.x - head * cos(angle + .pi / 7),
@@ -101,6 +105,24 @@ func makeShapeCGPath(kind: ShapeKind, points: [CGPoint]) -> CGPath {
         path.move(to: a); path.addLine(to: b)
     }
     return path
+}
+
+/// Round caps turn short dashes into dots. Dash the final path once so both
+/// contrast layers follow the same curves and disconnected arrowhead wings.
+func drawShapeCreationDots(on path: CGPath, zoom: CGFloat, arrowWingLength: CGFloat? = nil, in context: CGContext) {
+    guard zoom.isFinite, zoom > 0 else { return }
+    // At low zoom a whole wing can be shorter than one normal interval.
+    let spacing = min(10 / zoom, (arrowWingLength ?? .infinity) * 0.95)
+    let dots = path.copy(dashingWithPhase: 0, lengths: [spacing * 0.01, spacing * 0.99])
+    context.saveGState()
+    context.setLineCap(.round)
+    for (width, color) in [(spacing * 0.5, NSColor.white), (spacing * 0.25, NSColor.black)] {
+        context.setStrokeColor(color.cgColor)
+        context.setLineWidth(width)
+        context.addPath(dots)
+        context.strokePath()
+    }
+    context.restoreGState()
 }
 
 /// Whether a shape encloses an area (fillable, and hit-testable by containment).
@@ -369,7 +391,10 @@ class PageDrawingCanvas: NSView {
     /// it changes.
     var currentZoom: CGFloat = 1.0 {
         didSet {
-            if abs(oldValue - currentZoom) > 0.001 { invalidateCursor() }
+            if abs(oldValue - currentZoom) > 0.001 {
+                invalidateCursor()
+                if activeShapeStart != nil { needsDisplay = true }
+            }
         }
     }
 
@@ -562,6 +587,8 @@ class PageDrawingCanvas: NSView {
             cg.setStrokeColor(NSColor(canvasVM.strokeColor).withAlphaComponent(0.9).cgColor)
             cg.strokePath()
             cg.restoreGState()
+            let wing = kind == .arrow ? arrowHeadLength(from: activeShapePoints[0], to: activeShapePoints[1]) : nil
+            drawShapeCreationDots(on: previewPath, zoom: currentZoom, arrowWingLength: wing, in: cg)
         }
 
         // Selection handles for the selected shape on this page.

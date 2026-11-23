@@ -124,9 +124,11 @@ extension NSImage {
                 path.stroke()
             }
 
-            arms(width: 3.5, color: NSColor.white.withAlphaComponent(0.92)) // casing
-            arms(width: 1.6, color: NSColor.labelColor.withAlphaComponent(0.85))
-            drawCenterDot(at: c, fill: NSColor.labelColor)
+            // Blank PDF pages are white even in Dark Aqua. The white casing
+            // keeps the black reticle visible over dark imported PDF content.
+            arms(width: 4, color: .white)
+            arms(width: 2, color: .black)
+            drawCenterDot(at: c, fill: .black)
             return true
         }
     }
