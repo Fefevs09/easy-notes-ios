@@ -6,9 +6,19 @@ struct SidebarView: View {
 
     @State private var isCreatingNotebook = false
 
-    @State private var isRenamingNotebook = false
+    @State private var newParent: Notebook?
+    @State private var collapsed: Set<UUID> = []
+    @State private var editColor = 0
     @State private var notebookToRename: Notebook? = nil
-    @State private var renameNotebookName = ""
+    private var visibleNotebooks: [Notebook] {
+        func rows(_ siblings: [Notebook]) -> [Notebook] {
+            siblings.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+                .flatMap { notebook in
+                    [notebook] + (collapsed.contains(notebook.id) ? [] : rows(Array(notebook.children ?? [])))
+                }
+        }
+        return rows(viewModel.notebooks.filter { $0.parent == nil })
+    }
 
     @State private var isConfirmingDeleteNotebook = false
     @State private var notebookToDelete: Notebook? = nil
@@ -79,6 +89,7 @@ struct SidebarView: View {
                             Spacer()
 
                             Button(action: {
+                                newParent = nil
                                 isCreatingNotebook = true
                             }) {
                                 Image(systemName: "plus")
@@ -107,13 +118,31 @@ struct SidebarView: View {
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 6)
                         } else {
-                            ForEach(viewModel.notebooks, id: \.self) { notebook in
-                                notebookRow(notebook)
+                            ForEach(visibleNotebooks, id: \.self) { notebook in
+                                HStack(spacing: 0) {
+                                    if notebook.children?.isEmpty == false {
+                                        Button {
+                                            if !collapsed.insert(notebook.id).inserted { collapsed.remove(notebook.id) }
+                                        } label: {
+                                            Image(systemName: collapsed.contains(notebook.id) ? "chevron.right" : "chevron.down")
+                                                .frame(width: 16)
+                                        }
+                                        .buttonStyle(.plain)
+                                        .accessibilityLabel(collapsed.contains(notebook.id) ? "Expandir" : "Recolher")
+                                    } else {
+                                        Color.clear.frame(width: 16, height: 1)
+                                    }
+                                    notebookRow(notebook)
+                                }
+                                .padding(.leading, CGFloat(min(notebook.ancestors.count, 6)) * 10)
                                     .contextMenu {
-                                        Button("Renomear...") {
+                                        Button("Editar caderno…") {
                                             notebookToRename = notebook
-                                            renameNotebookName = notebook.name
-                                            isRenamingNotebook = true
+                                            editColor = notebook.swatchIndex
+                                        }
+                                        Button("Nova subpasta…") {
+                                            newParent = notebook
+                                            isCreatingNotebook = true
                                         }
                                         Divider()
                                         Button("Excluir Caderno...", role: .destructive) {
@@ -158,27 +187,20 @@ struct SidebarView: View {
         // Dialogue overlays
         .sheet(isPresented: $isCreatingNotebook) {
             NamePromptView(
-                title: "Novo Caderno",
+                title: newParent == nil ? "Novo Caderno" : "Nova subpasta",
                 fieldLabel: "Nome do caderno",
                 confirmationLabel: "Criar",
-                onConfirm: viewModel.addNotebook(name:)
+                onConfirm: { name in
+                    if let newParent { collapsed.remove(newParent.id) }
+                    viewModel.addNotebook(name: name, parent: newParent)
+                }
             )
         }
-        .alert("Renomear Caderno", isPresented: $isRenamingNotebook) {
-            TextField("Nome do caderno", text: $renameNotebookName)
-            Button("Cancelar", role: .cancel) {
-                notebookToRename = nil
-                renameNotebookName = ""
-            }
-            Button("Salvar") {
-                if let notebook = notebookToRename {
-                    viewModel.renameNotebook(notebook, to: renameNotebookName)
-                }
-                notebookToRename = nil
-                renameNotebookName = ""
-            }
-        } message: {
-            Text("Insira o novo nome para este caderno.")
+        .sheet(item: $notebookToRename) { notebook in
+            NamePromptView(title: "Editar caderno", fieldLabel: "Nome do caderno",
+                           confirmationLabel: "Salvar", onConfirm: { name in
+                viewModel.renameNotebook(notebook, to: name, colorIndex: editColor)
+            }, initialName: notebook.name, notebookColor: $editColor)
         }
         .alert("Excluir Caderno", isPresented: $isConfirmingDeleteNotebook) {
             Button("Excluir Caderno e Notas", role: .destructive) {
@@ -197,7 +219,7 @@ struct SidebarView: View {
                 notebookToDelete = nil
             }
         } message: {
-            Text("As notas contidas neste caderno serão enviadas para a Lixeira, a menos que escolha manter as notas como Notas Soltas.")
+            Text("As subpastas sobem um nível. Excluir apenas o caderno mantém suas notas em Notas Soltas. Excluir também as notas as envia para a Lixeira.")
         }
     }
 
@@ -264,7 +286,7 @@ struct SidebarView: View {
         }) {
             HStack(spacing: 10) {
                 RoundedRectangle(cornerRadius: 2.5, style: .continuous)
-                    .fill(PixelTheme.notebookColor(for: notebook.name))
+                    .fill(PixelTheme.notebookColor(for: notebook))
                     .frame(width: 8, height: 8)
                     .frame(width: 18)
 

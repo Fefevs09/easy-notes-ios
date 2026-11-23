@@ -6,6 +6,9 @@ struct NamePromptView: View {
     let confirmationLabel: LocalizedStringKey
     let onConfirm: (String) -> Void
 
+    var initialName = ""
+    var notebookColor: Binding<Int>? = nil
+
     @Environment(\.dismiss) private var dismiss
     @FocusState private var isNameFocused: Bool
     @State private var name = ""
@@ -41,6 +44,17 @@ struct NamePromptView: View {
                 }
                 .focused($isNameFocused)
 
+            if let notebookColor {
+                Picker("Cor da pasta", selection: notebookColor) {
+                    ForEach(PixelTheme.notebookSwatches.indices, id: \.self) { index in
+                        HStack {
+                            Circle().fill(PixelTheme.notebookSwatches[index].dot).frame(width: 10, height: 10)
+                            Text(PixelTheme.notebookSwatches[index].name)
+                        }.tag(index)
+                    }
+                }
+            }
+
             HStack(spacing: 10) {
                 Spacer()
                 Button("Cancelar", role: .cancel) { dismiss() }
@@ -62,7 +76,10 @@ struct NamePromptView: View {
         .padding(14)
         .background(PixelTheme.surface)
         .environment(\.colorScheme, .light)
-        .onAppear { isNameFocused = true }
+        .onAppear {
+            name = initialName
+            isNameFocused = true
+        }
     }
 
     private func confirm() {

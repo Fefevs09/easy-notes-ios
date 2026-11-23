@@ -114,7 +114,7 @@ struct ContentView: View {
                 .foregroundStyle(PixelTheme.muted)
                 .accessibilityHidden(true)
 
-            Text(note.notebook?.name ?? "Notas Soltas")
+            Text(note.notebook?.path ?? "Notas Soltas")
                 .foregroundStyle(PixelTheme.muted)
                 .lineLimit(1)
 

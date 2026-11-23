@@ -397,9 +397,9 @@ struct NotesView: View {
                         HStack(spacing: 7) {
                             Image(systemName: "folder.fill")
                                 .font(.system(size: 11.5))
-                                .foregroundColor(PixelTheme.notebookColor(for: notebook.name))
+                                .foregroundColor(PixelTheme.notebookColor(for: notebook))
 
-                            Text(notebook.name)
+                            Text(notebook.path)
                                 .font(PixelTheme.uiFont(size: 12.5, weight: isActive ? .semibold : .medium))
                                 .foregroundColor(isActive ? PixelTheme.accent : PixelTheme.ink)
                                 .lineLimit(1)
@@ -522,7 +522,7 @@ struct NotesView: View {
         case .uncategorized:
             return "Notas Soltas"
         case .notebook(let notebook):
-            return notebook.name
+            return notebook.path
         case .trash:
             return "Lixeira"
         }
@@ -904,7 +904,7 @@ struct NoteCardView<PopoverContent: View>: View {
 
     private var cardAccessibilityLabel: String {
         let base = note.displayEmoji.map { "\($0) \(displayTitle)" } ?? displayTitle
-        let folder = note.notebook?.name ?? "Notas Soltas"
+        let folder = note.notebook?.path ?? "Notas Soltas"
         return "\(base), \(folder), \(formatPortugueseRelativeDate(note.updatedAt))"
     }
 
@@ -917,7 +917,7 @@ struct NoteCardView<PopoverContent: View>: View {
                         if note.hasCustomCover {
                             Color.clear
                         } else {
-                            PixelTheme.notebookBannerTint(for: note.notebook?.name)
+                            PixelTheme.notebookBannerTint(for: note.notebook)
 
                             // Inset crisp white page thumbnail
                             NoteThumbnailView(note: note, coverCache: coverCache)
@@ -991,7 +991,7 @@ struct NoteCardView<PopoverContent: View>: View {
 
                             Spacer(minLength: 6)
 
-                            Text(note.notebook?.name ?? "Notas Soltas")
+                            Text(note.notebook?.path ?? "Notas Soltas")
                                 .font(PixelTheme.uiFont(size: 11.5, weight: .medium))
                                 .foregroundColor(note.hasCustomCover ? .white.opacity(0.92) : PixelTheme.muted)
                                 .lineLimit(1)
@@ -1077,7 +1077,7 @@ struct NoteListRowCardView<PopoverContent: View>: View {
 
     private var rowAccessibilityLabel: String {
         let base = note.displayEmoji.map { "\($0) \(displayTitle)" } ?? displayTitle
-        let folder = note.notebook?.name ?? "Notas Soltas"
+        let folder = note.notebook?.path ?? "Notas Soltas"
         return "\(base), \(folder), \(formatPortugueseRelativeDate(note.updatedAt))"
     }
 
@@ -1088,7 +1088,7 @@ struct NoteListRowCardView<PopoverContent: View>: View {
                     // Mini thumbnail
                     ZStack {
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(PixelTheme.notebookBannerTint(for: note.notebook?.name))
+                            .fill(PixelTheme.notebookBannerTint(for: note.notebook))
 
                         NoteThumbnailView(note: note, coverCache: coverCache)
                             .background(PixelTheme.paper)
@@ -1131,10 +1131,10 @@ struct NoteListRowCardView<PopoverContent: View>: View {
 
                         HStack(spacing: 6) {
                             RoundedRectangle(cornerRadius: 2.5, style: .continuous)
-                                .fill(PixelTheme.notebookColor(for: note.notebook?.name))
+                                .fill(PixelTheme.notebookColor(for: note.notebook))
                                 .frame(width: 8, height: 8)
 
-                            Text(note.notebook?.name ?? "Notas Soltas")
+                            Text(note.notebook?.path ?? "Notas Soltas")
                                 .font(PixelTheme.uiFont(size: 12, weight: .medium))
                                 .foregroundColor(PixelTheme.muted)
                                 .lineLimit(1)

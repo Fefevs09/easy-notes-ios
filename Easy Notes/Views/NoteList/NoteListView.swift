@@ -64,7 +64,7 @@ struct NoteListView: View {
                             if !viewModel.notebooks.isEmpty {
                                 Divider()
                                 ForEach(viewModel.notebooks, id: \.self) { notebook in
-                                    Button(notebook.name) {
+                                    Button(notebook.path) {
                                         viewModel.moveNote(note, to: notebook)
                                     }
                                     .disabled(note.notebook == notebook)
@@ -228,7 +228,7 @@ struct NoteListView: View {
         case .uncategorized:
             return "Notas Soltas"
         case .notebook(let notebook):
-            return notebook.name
+            return notebook.path
         case .trash:
             return "Lixeira"
         }
@@ -299,10 +299,10 @@ struct NoteRowView: View {
 
             HStack(spacing: 6) {
                 RoundedRectangle(cornerRadius: 2, style: .continuous)
-                    .fill(PixelTheme.notebookColor(for: note.notebook?.name))
+                    .fill(PixelTheme.notebookColor(for: note.notebook))
                     .frame(width: 7, height: 7)
 
-                Text(note.notebook?.name ?? "Notas Soltas")
+                Text(note.notebook?.path ?? "Notas Soltas")
                     .font(PixelTheme.uiFont(size: 11.5, weight: .medium))
                     .foregroundColor(isSelected ? PixelTheme.accent.opacity(0.85) : PixelTheme.muted)
                     .lineLimit(1)

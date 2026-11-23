@@ -890,3 +890,75 @@ final class NoteContextMenuTests: XCTestCase {
         }
     }
 }
+
+extension NoteContextMenuTests {
+    func testMigratingLegacySQLiteAndEditingHierarchy() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("legacy.sqlite")
+        let notebookID = UUID()
+        try autoreleasepool {
+            let legacy = makePreEmojiLegacyModel()
+            let emoji = NSAttributeDescription()
+            emoji.name = "emoji"
+            emoji.attributeType = .stringAttributeType
+            emoji.isOptional = true
+            try XCTUnwrap(legacy.entitiesByName["Note"]).properties.append(emoji)
+            let coordinator = NSPersistentStoreCoordinator(managedObjectModel: legacy)
+            let store = try coordinator.addPersistentStore(type: .sqlite, at: url)
+            let context = NSManagedObjectContext(concurrencyType: .mainQueueConcurrencyType)
+            context.persistentStoreCoordinator = coordinator
+            let folder = NSEntityDescription.insertNewObject(forEntityName: "Notebook", into: context)
+            folder.setValue(notebookID, forKey: "id")
+            folder.setValue("Arquivo", forKey: "name")
+            let note = NSEntityDescription.insertNewObject(forEntityName: "Note", into: context)
+            note.setValue(UUID(), forKey: "id")
+            note.setValue("Original", forKey: "title")
+            note.setValue("Texto preservado", forKey: "content")
+            note.setValue(Date(), forKey: "createdAt")
+            note.setValue(Date(), forKey: "updatedAt")
+            note.setValue(folder, forKey: "notebook")
+            try context.save()
+            context.reset()
+            try coordinator.remove(store)
+        }
+
+        let container = try TestSupport.makeSQLiteContainer(at: url)
+        let context = container.viewContext
+        let vm = NoteViewModel(context: context, coverCache: NoteCoverCache())
+        let root = try XCTUnwrap(vm.notebooks.first)
+        let note = try XCTUnwrap(root.notesArray.first)
+        XCTAssertEqual(root.id, notebookID)
+        XCTAssertEqual(note.content, "Texto preservado")
+        XCTAssertNil(root.parent)
+        let originalColor = PixelTheme.defaultNotebookIndex("Arquivo")
+        XCTAssertEqual(root.swatchIndex, originalColor)
+        vm.renameNotebook(root, to: "Projetos")
+        XCTAssertEqual(root.swatchIndex, originalColor)
+        vm.addNotebook(name: "Arquivo", parent: root)
+        let child = try XCTUnwrap(vm.selectedNotebook)
+        vm.renameNotebook(child, to: "Ativos", colorIndex: 3)
+        let reopened = try TestSupport.makeSQLiteContainer(at: url)
+        let request = NSFetchRequest<Notebook>(entityName: "Notebook")
+        request.predicate = NSPredicate(format: "id == %@", child.id as NSUUID)
+        let persisted = try XCTUnwrap(reopened.viewContext.fetch(request).first)
+        XCTAssertEqual(persisted.swatchIndex, 3)
+        XCTAssertEqual(persisted.path, "Projetos / Ativos")
+        try closeSQLiteContainer(reopened)
+        let menu = NoteActionMenuModel(note: note, notebooks: vm.notebooks, filter: .all)
+        let destination = try XCTUnwrap(menu.moveDestinations.first { $0.notebookID == child.id })
+        XCTAssertEqual(destination.title, "Projetos / Ativos")
+        XCTAssertEqual(destination.swatchIndex, 3)
+        vm.deleteNotebook(root)
+        XCTAssertNil(child.parent)
+        XCTAssertNil(note.notebook)
+        XCTAssertFalse(note.isDeleted)
+        XCTAssertFalse(note.isTrashed)
+        vm.moveNote(note, to: child)
+        vm.deleteNotebook(child, keepNotes: false)
+        XCTAssertTrue(note.isTrashed)
+        XCTAssertNil(note.notebook)
+        XCTAssertEqual(try context.count(for: NSFetchRequest<Note>(entityName: "Note")), 1)
+    }
+}

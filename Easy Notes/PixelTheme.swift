@@ -59,26 +59,24 @@ enum PixelTheme {
     ]
 
     // MARK: - Notebook Deterministic Colors & Card Banner Tints
-    private static let notebookSwatches: [(dot: Color, banner: Color)] = [
-        (inkViolet, Color(red: 0.914, green: 0.890, blue: 0.980)),             // Lavender
-        (inkSage, Color(red: 0.878, green: 0.918, blue: 0.859)),               // Sage
-        (inkTerracotta, Color(red: 0.945, green: 0.894, blue: 0.863)),         // Clay / Peach
-        (inkOchre, Color(red: 0.941, green: 0.914, blue: 0.843)),              // Warm Sand
-        (Color(red: 0.427, green: 0.498, blue: 0.600), Color(red: 0.894, green: 0.922, blue: 0.949)) // Slate Mist
+    static let notebookSwatches: [(name: String, dot: Color, banner: Color)] = [
+        ("Lavanda", inkViolet, Color(red: 0.914, green: 0.890, blue: 0.980)),             // Lavender
+        ("Sálvia", inkSage, Color(red: 0.878, green: 0.918, blue: 0.859)),               // Sage
+        ("Terracota", inkTerracotta, Color(red: 0.945, green: 0.894, blue: 0.863)),         // Clay / Peach
+        ("Areia", inkOchre, Color(red: 0.941, green: 0.914, blue: 0.843)),              // Warm Sand
+        ("Ardósia", Color(red: 0.427, green: 0.498, blue: 0.600), Color(red: 0.894, green: 0.922, blue: 0.949)) // Slate Mist
     ]
 
-    static func notebookColor(for name: String?) -> Color {
-        guard let name = name, !name.isEmpty else { return muted }
-        let idx = stableHash(name) % notebookSwatches.count
-        return notebookSwatches[idx].dot
+    static func defaultNotebookIndex(_ name: String) -> Int {
+        stableHash(name) % notebookSwatches.count
     }
 
-    static func notebookBannerTint(for name: String?) -> Color {
-        guard let name = name, !name.isEmpty else {
-            return Color(red: 0.929, green: 0.922, blue: 0.894)
-        }
-        let idx = stableHash(name) % notebookSwatches.count
-        return notebookSwatches[idx].banner
+    static func notebookColor(for notebook: Notebook?) -> Color {
+        notebook.map { notebookSwatches[$0.swatchIndex].dot } ?? muted
+    }
+
+    static func notebookBannerTint(for notebook: Notebook?) -> Color {
+        notebook.map { notebookSwatches[$0.swatchIndex].banner } ?? Color(red: 0.929, green: 0.922, blue: 0.894)
     }
 
     private static func stableHash(_ text: String) -> Int {

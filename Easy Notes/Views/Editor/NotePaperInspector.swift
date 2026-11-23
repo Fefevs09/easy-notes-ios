@@ -18,7 +18,7 @@ struct NotePaperInspector: View {
                         .font(PixelTheme.uiFont(size: 14, weight: .semibold))
                         .foregroundStyle(PixelTheme.ink)
                         .lineLimit(2)
-                    Text("Caderno · \(note.notebook?.name ?? "Notas Soltas")")
+                    Text("Caderno · \(note.notebook?.path ?? "Notas Soltas")")
                         .foregroundStyle(PixelTheme.accent)
                         .lineLimit(1)
                     Text("Editada \(relativeEditDate)")

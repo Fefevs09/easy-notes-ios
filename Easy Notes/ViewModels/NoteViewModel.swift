@@ -220,12 +220,14 @@ public class NoteViewModel: ObservableObject {
     }
     
     // MARK: - Notebook CRUD
-    public func addNotebook(name: String) {
+    public func addNotebook(name: String, parent: Notebook? = nil) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         
         let notebook = Notebook(context: context)
         notebook.id = UUID()
+        notebook.parent = parent
+        notebook.colorIndex = NSNumber(value: PixelTheme.defaultNotebookIndex(trimmed))
         notebook.name = trimmed
         
         save()
@@ -257,17 +259,18 @@ public class NoteViewModel: ObservableObject {
         }
     }
 
-    public func renameNotebook(_ notebook: Notebook, to newName: String) {
+    public func renameNotebook(_ notebook: Notebook, to newName: String, colorIndex: Int? = nil) {
         let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         
+        notebook.colorIndex = NSNumber(value: colorIndex ?? notebook.swatchIndex)
         notebook.name = trimmed
         save()
         loadNotebooks()
     }
     
     // Smart Notebook Delete
-    public func deleteNotebook(_ notebook: Notebook, keepNotes: Bool = false) {
+    public func deleteNotebook(_ notebook: Notebook, keepNotes: Bool = true) {
         // If deleting the currently selected notebook, fall back to "All Notes"
         if case .notebook(let current) = selectedFilter, current == notebook {
             selectedFilter = .all
@@ -275,13 +278,13 @@ public class NoteViewModel: ObservableObject {
         
         let notebookNotes = notebook.notes as? Set<Note> ?? []
         for note in notebookNotes {
-            if keepNotes {
-                note.notebook = nil
-            } else {
+            note.notebook = nil
+            if !keepNotes {
                 note.isTrashed = true
             }
         }
         
+        for child in notebook.children ?? [] { child.parent = notebook.parent }
         context.delete(notebook)
         save()
         loadNotebooks()

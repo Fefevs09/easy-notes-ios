@@ -243,13 +243,13 @@ public class CoreDataStack {
         ]
 
         // --- 4. Relationships ---
-        // Notebook -> Note (One-to-Many, cascade delete)
+        // Notebook -> Note (One-to-Many, nullify delete)
         let notebookToNotesRelation = NSRelationshipDescription()
         notebookToNotesRelation.name = "notes"
         notebookToNotesRelation.destinationEntity = noteEntity
         notebookToNotesRelation.minCount = 0
         notebookToNotesRelation.maxCount = 0 // unlimited
-        notebookToNotesRelation.deleteRule = .cascadeDeleteRule
+        notebookToNotesRelation.deleteRule = .nullifyDeleteRule
         
         // Note -> Notebook (Many-to-One, nullify delete)
         let noteToNotebookRelation = NSRelationshipDescription()
@@ -307,6 +307,26 @@ public class CoreDataStack {
         noteEntity.properties.append(noteToShapesRelation)
         strokeEntity.properties.append(strokeToNoteRelation)
         shapeEntity.properties.append(shapeToNoteRelation)
+
+        let color = NSAttributeDescription()
+        color.name = "colorIndex"
+        color.attributeType = .integer16AttributeType
+        color.isOptional = true
+
+        let parent = NSRelationshipDescription()
+        parent.name = "parent"
+        parent.destinationEntity = notebookEntity
+        parent.maxCount = 1
+        parent.deleteRule = .nullifyDeleteRule
+
+        let children = NSRelationshipDescription()
+        children.name = "children"
+        children.destinationEntity = notebookEntity
+        children.maxCount = 0
+        children.deleteRule = .nullifyDeleteRule
+        parent.inverseRelationship = children
+        children.inverseRelationship = parent
+        notebookEntity.properties += [color, parent, children]
 
         // --- 5. Configure Model ---
         model.entities = [notebookEntity, noteEntity, strokeEntity, shapeEntity]
