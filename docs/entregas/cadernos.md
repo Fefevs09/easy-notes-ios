@@ -23,3 +23,7 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild test \
 ```
 
 Resultado em 23/11/2026: 45 testes aprovados, zero falhas. A validação foi automatizada, sem inspeção manual da janela.
+
+## Integração com capa e papel
+
+O build Debug e a suíte integrada passaram no Xcode 27.2 em macOS arm64, com 50 testes e zero falhas sobre o código de cee6dee. A revisão identificou destinos com o mesmo caminho visível. O menu agora distingue esses casos e quebra caminhos longos em várias linhas. A revisão independente validou a migração entre processos, mas atingiu o limite de uso antes do parecer final. A inspeção manual com VoiceOver permanece pendente.
