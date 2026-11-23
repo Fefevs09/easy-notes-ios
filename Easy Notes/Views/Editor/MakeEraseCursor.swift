@@ -104,7 +104,7 @@ extension NSImage {
     /// Precision crosshair for shape tools: thin arms with a center gap and a
     /// dot, white-cased for contrast. Fixed size (not zoom-scaled) since it's a
     /// precision indicator, not a footprint.
-    static func createShapeCrosshairImage() -> NSImage {
+    static func createShapeCrosshairImage(darkPaper: Bool) -> NSImage {
         let side: CGFloat = 34.0
         let arm: CGFloat = 9.0
         let gap: CGFloat = 5.0
@@ -124,18 +124,20 @@ extension NSImage {
                 path.stroke()
             }
 
-            arms(width: 3.5, color: NSColor.white.withAlphaComponent(0.92)) // casing
-            arms(width: 1.6, color: NSColor.labelColor.withAlphaComponent(0.85))
-            drawCenterDot(at: c, fill: NSColor.labelColor)
+            let ink: NSColor = darkPaper ? .white : .black
+            let rim: NSColor = darkPaper ? .black : .white
+            arms(width: 4, color: rim)
+            arms(width: 2, color: ink)
+            drawCenterDot(at: c, fill: ink, rim: rim)
             return true
         }
     }
 
-    private static func drawCenterDot(at c: NSPoint, fill: NSColor) {
+    private static func drawCenterDot(at c: NSPoint, fill: NSColor, rim: NSColor = .white) {
         let dot = NSBezierPath(ovalIn: NSRect(x: c.x - 2.5, y: c.y - 2.5, width: 5, height: 5))
         fill.setFill()
         dot.fill()
-        NSColor.white.withAlphaComponent(0.9).setStroke()
+        rim.withAlphaComponent(0.9).setStroke()
         dot.lineWidth = 1
         dot.stroke()
     }
