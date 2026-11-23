@@ -1,10 +1,10 @@
 import CoreData
 
 enum TestSupport {
-    private static let model = CoreDataStack.makeModel()
+    static let sharedModel = CoreDataStack.makeModel()
 
     static func makeInMemoryContext() -> NSManagedObjectContext {
-        let container = NSPersistentContainer(name: "EasyNotesModelTests", managedObjectModel: model)
+        let container = NSPersistentContainer(name: "EasyNotesModelTests", managedObjectModel: sharedModel)
         let description = NSPersistentStoreDescription()
         description.type = NSInMemoryStoreType
         container.persistentStoreDescriptions = [description]
@@ -18,10 +18,12 @@ enum TestSupport {
         return container.viewContext
     }
 
-    static func makeSQLiteContainer(at storeURL: URL) throws -> NSPersistentContainer {
-        let container = NSPersistentContainer(name: "EasyNotesModelSQLiteTests", managedObjectModel: model)
-        let description = NSPersistentStoreDescription(url: storeURL)
+    static func makeSQLiteContainer(at url: URL) throws -> NSPersistentContainer {
+        let container = NSPersistentContainer(name: "EasyNotesModelSQLiteTests", managedObjectModel: sharedModel)
+        let description = NSPersistentStoreDescription(url: url)
         description.type = NSSQLiteStoreType
+        description.shouldMigrateStoreAutomatically = true
+        description.shouldInferMappingModelAutomatically = true
         container.persistentStoreDescriptions = [description]
 
         var loadError: Error?
@@ -38,7 +40,7 @@ enum TestSupport {
     /// NoteViewModel wired to it.
     static func makeInMemoryViewModel() -> (viewModel: NoteViewModel, context: NSManagedObjectContext) {
         let context = makeInMemoryContext()
-        let viewModel = NoteViewModel(context: context)
+        let viewModel = NoteViewModel(context: context, coverCache: NoteCoverCache())
         return (viewModel, context)
     }
 }

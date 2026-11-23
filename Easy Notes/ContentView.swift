@@ -7,11 +7,6 @@ struct ContentView: View {
     @EnvironmentObject var viewModel: NoteViewModel
     @StateObject private var canvasVM = CanvasViewModel()
 
-    @State private var activeTitle = ""
-    @State private var loadingNoteId: UUID?
-    @State private var loadedNote: Note?
-    @State private var saveTask: Task<Void, Never>?
-
     @State private var zoomScale: CGFloat = 1.0
     @State private var canvasViewportWidth: CGFloat = 0
     @State private var isSidebarOpen = true
@@ -47,12 +42,17 @@ struct ContentView: View {
         .onChange(of: viewModel.selectedNote?.pageCount) { _, pageCount in
             selectedPageIndex = min(max(0, selectedPageIndex), max(1, Int(pageCount ?? 1)) - 1)
         }
-        .onChange(of: activeTitle) { _, newTitle in
-            saveTask?.cancel()
-            saveTask = nil
-            if let note = viewModel.selectedNote, note.title != newTitle {
-                scheduleSave(for: note, title: newTitle)
-            }
+        .onDisappear { viewModel.flushTitleEdits() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+            viewModel.flushTitleEdits()
+        }
+        .alert("Falha ao renomear nota", isPresented: Binding(
+            get: { viewModel.titleSaveError != nil },
+            set: { if !$0 { viewModel.titleSaveError = nil } }
+        )) {
+            Button("OK") { viewModel.titleSaveError = nil }
+        } message: {
+            Text(viewModel.titleSaveError ?? "")
         }
     }
 
@@ -62,7 +62,6 @@ struct ContentView: View {
         return VStack(spacing: 0) {
             editorHeader(for: note)
             EditorToolbarView(canvasVM: canvasVM, isSidebarOpen: $isSidebarOpen) {
-                flushPendingTitleSave()
                 viewModel.selectedNote = nil
             }
 
@@ -102,7 +101,6 @@ struct ContentView: View {
     private func editorHeader(for note: Note) -> some View {
         HStack(spacing: 10) {
             Button {
-                flushPendingTitleSave()
                 viewModel.selectedNote = nil
             } label: {
                 EasyNotesBrandMark(compact: true)
@@ -125,7 +123,13 @@ struct ContentView: View {
                 .foregroundStyle(PixelTheme.muted)
                 .accessibilityHidden(true)
 
-            TextField("Sem título", text: $activeTitle)
+            TextField("Sem título", text: Binding(
+                get: { note.title },
+                set: { title in
+                    viewModel.editTitle(of: note, to: title)
+                }
+            ))
+                .id(note.objectID)
                 .textFieldStyle(.plain)
                 .font(PixelTheme.uiFont(size: 13.5, weight: .semibold))
                 .foregroundStyle(PixelTheme.ink)
@@ -133,15 +137,9 @@ struct ContentView: View {
 
             Spacer(minLength: 8)
 
-            if saveTask != nil {
-                Text("Salvando...")
-                    .foregroundStyle(PixelTheme.muted)
-                    .fixedSize()
-            } else {
-                Label("Salvo", systemImage: "checkmark")
-                    .foregroundStyle(PixelTheme.success)
-                    .fixedSize()
-            }
+            Label(viewModel.hasPendingTitle ? "Salvando…" : "Salvo", systemImage: viewModel.hasPendingTitle ? "clock" : "checkmark")
+                .foregroundStyle(PixelTheme.success)
+                .fixedSize()
 
             Button {
                 exportPDF(for: note)
@@ -201,7 +199,7 @@ struct ContentView: View {
 
             switch sidebarTab {
             case .note:
-                NotePaperInspector(note: note, title: activeTitle)
+                NotePaperInspector(note: note, title: note.title)
             case .pages:
                 ThumbnailBarView(
                     noteVM: viewModel,
@@ -222,8 +220,7 @@ struct ContentView: View {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.pdf]
         panel.canCreateDirectories = true
-        let title = activeTitle.isEmpty ? "Sem título" : activeTitle
-        panel.nameFieldStringValue = "\(title).pdf"
+        panel.nameFieldStringValue = note.suggestedPDFName
 
         panel.begin { response in
             guard response == .OK, let url = panel.url else { return }
@@ -241,27 +238,9 @@ struct ContentView: View {
     }
 
     private func handleNoteChange(to newNote: Note?) {
-        guard loadingNoteId != newNote?.id else { return }
-
-        flushPendingTitleSave()
-        loadedNote = newNote
-        loadingNoteId = newNote?.id
-        activeTitle = newNote?.title ?? ""
         zoomScale = 1.0
         selectedPageIndex = 0
         sidebarTab = (newNote?.pageCount ?? 0) > 1 ? .pages : .note
-    }
-
-    private func flushPendingTitleSave() {
-        saveTask?.cancel()
-        saveTask = nil
-
-        if let outgoing = loadedNote,
-           !outgoing.isDeleted,
-           outgoing.managedObjectContext != nil,
-           outgoing.title != activeTitle {
-            viewModel.updateNoteContent(note: outgoing, title: activeTitle, content: outgoing.content)
-        }
     }
 
     private func fitCanvasToWidth(for note: Note) {
@@ -276,17 +255,5 @@ struct ContentView: View {
         let rawScale = availableWidth / pageWidth
         let rounded = (rawScale * 20).rounded() / 20
         zoomScale = min(4.0, max(0.5, rounded))
-    }
-
-    private func scheduleSave(for note: Note, title: String) {
-        saveTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 500_000_000)
-            guard !Task.isCancelled else { return }
-
-            if viewModel.selectedNote?.id == note.id {
-                viewModel.updateNoteContent(note: note, title: title, content: note.content)
-            }
-            saveTask = nil
-        }
     }
 }

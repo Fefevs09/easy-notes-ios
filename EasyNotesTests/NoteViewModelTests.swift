@@ -236,4 +236,75 @@ class NoteViewModelTests: XCTestCase {
         XCTAssertGreaterThan(note.gridOriginX, 0)
         XCTAssertGreaterThan(note.gridOriginY, 0)
     }
+
+    func testRenameTargetsOriginalNoteAcrossSelectionAndEditorClose() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let source = folder.appendingPathComponent("Origem.pdf")
+        let document = PDFDocument()
+        document.insert(PDFPage(), at: 0)
+        XCTAssertTrue(document.write(to: source))
+        let notebook = try XCTUnwrap(viewModel.notebooks.first)
+        viewModel.selectedFilter = .notebook(notebook)
+        viewModel.addNote(title: "Comum", content: "Texto")
+        let common = try XCTUnwrap(viewModel.selectedNote)
+        viewModel.importPDF(url: source)
+        let imported = try XCTUnwrap(viewModel.selectedNote)
+        XCTAssertEqual(common.suggestedPDFName, "Comum.pdf")
+        XCTAssertEqual(imported.suggestedPDFName, "Origem.pdf")
+        try viewModel.renameNote(common, to: "Comum editada")
+        XCTAssertEqual(viewModel.selectedNote, imported)
+        XCTAssertEqual(imported.title, "Origem")
+
+        try viewModel.renameNote(imported, to: "PDF editado")
+        viewModel.selectedNote = nil
+        let commonID = common.objectID
+        let importedID = imported.objectID
+        let notebookID = notebook.objectID
+        inMemoryContext.reset()
+        for (id, expected) in [(commonID, "Comum editada"), (importedID, "PDF editado")] {
+            let reopened = try XCTUnwrap(inMemoryContext.existingObject(with: id) as? Note)
+            XCTAssertEqual(reopened.title, expected)
+            XCTAssertEqual(reopened.notebook?.objectID, notebookID)
+            XCTAssertEqual(reopened.suggestedPDFName, expected + ".pdf")
+            let destination = folder.appendingPathComponent(reopened.suggestedPDFName)
+            try viewModel.exportPDF(for: reopened, to: destination)
+            XCTAssertEqual(PDFDocument(url: destination)?.pageCount, 1)
+            if id == commonID {
+                XCTAssertEqual(reopened.content, "Texto")
+            } else {
+                XCTAssertEqual(reopened.pdfData, try Data(contentsOf: source))
+            }
+        }
+    }
+
+    func testEditorBatchesTitleEditsAndFlushesOnSelectionChange() throws {
+        viewModel.addNote(title: "Primeira")
+        let first = try XCTUnwrap(viewModel.selectedNote)
+        viewModel.addNote(title: "Segunda")
+        let second = try XCTUnwrap(viewModel.selectedNote)
+        let id = second.objectID
+        for title in ["N", "No", "Novo"] {
+            viewModel.editTitle(of: second, to: title)
+            XCTAssertEqual(second.suggestedPDFName, title + ".pdf")
+            XCTAssertEqual(second.committedValues(forKeys: ["title"])["title"] as? String, "Segunda")
+        }
+        viewModel.selectedNote = first
+        XCTAssertFalse(viewModel.hasPendingTitle)
+        XCTAssertEqual(first.title, "Primeira")
+        inMemoryContext.reset()
+        XCTAssertEqual((try inMemoryContext.existingObject(with: id) as? Note)?.title, "Novo")
+    }
+
+    func testRenameEmptyTitleAndUnchangedTitle() throws {
+        viewModel.addNote(title: "Título")
+        let note = try XCTUnwrap(viewModel.selectedNote)
+        try viewModel.renameNote(note, to: "")
+        let date = note.updatedAt
+        try viewModel.renameNote(note, to: "")
+        XCTAssertEqual(note.title, "")
+        XCTAssertEqual(note.suggestedPDFName, "Sem título.pdf")
+        XCTAssertEqual(note.updatedAt, date)
+    }
 }

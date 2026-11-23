@@ -479,7 +479,7 @@ struct EditorToolbarView: View {
 
         let savePanel = NSSavePanel()
         savePanel.allowedContentTypes = [.pdf]
-        savePanel.nameFieldStringValue = "\(note.title).pdf"
+        savePanel.nameFieldStringValue = note.suggestedPDFName
         savePanel.canCreateDirectories = true
 
         savePanel.begin { response in
