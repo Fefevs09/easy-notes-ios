@@ -10,6 +10,7 @@ struct EditorToolbarView: View {
 
     @Environment(\.displayScale) private var displayScale
     @State private var isSizePopoverPresented = false
+    @State private var isNoteSettingsPresented = false
 
     private var isPenTool: Bool {
         switch canvasVM.activeTool {
@@ -33,6 +34,9 @@ struct EditorToolbarView: View {
         }
         .onChange(of: contextualTool) { _, _ in
             isSizePopoverPresented = false
+        }
+        .onChange(of: viewModel.selectedNote?.id) { _, _ in
+            isNoteSettingsPresented = false
         }
     }
 
@@ -104,6 +108,7 @@ struct EditorToolbarView: View {
             .accessibilityLabel(isSidebarOpen ? "Ocultar painel lateral" : "Mostrar painel lateral")
             .help(isSidebarOpen ? "Ocultar painel lateral" : "Mostrar painel lateral")
 
+            noteSettingsButton
             optionsMenu
         }
         .modifier(ToolbarRow(height: 46, fill: PixelTheme.paper, hairline: 1 / displayScale))
@@ -128,25 +133,31 @@ struct EditorToolbarView: View {
         .help("Formas geométricas")
     }
 
-    private var optionsMenu: some View {
-        let gridStyle = GridStyle(rawValue: viewModel.selectedNote?.gridStyle ?? "") ?? .none
-
-        return Menu {
-            Button("Exportar como PDF", action: exportPDF)
-                .disabled(viewModel.selectedNote == nil)
-
-            Menu("Papel / Grade") {
-                ForEach(GridStyle.allCases, id: \.self) { style in
-                    Button {
-                        if let note = viewModel.selectedNote {
-                            viewModel.setGridStyle(style, for: note)
-                        }
-                    } label: {
-                        Label(style.displayName, systemImage: gridStyle == style ? "checkmark" : style.systemImage)
-                    }
+    private var noteSettingsButton: some View {
+        Button {
+            isNoteSettingsPresented.toggle()
+        } label: {
+            iconLabel("gearshape", color: isNoteSettingsPresented ? PixelTheme.accent : PixelTheme.inkSecondary)
+        }
+        .buttonStyle(.plain)
+        .disabled(viewModel.selectedNote == nil)
+        .accessibilityLabel("Configurações da nota")
+        .help("Configurações da nota")
+        .popover(isPresented: $isNoteSettingsPresented, arrowEdge: .top) {
+            if let note = viewModel.selectedNote {
+                NoteSettingsPopover(note: note) { style in
+                    guard viewModel.selectedNote === note,
+                          style != (GridStyle(rawValue: note.gridStyle) ?? .none) else { return }
+                    viewModel.setGridStyle(style, for: note)
                 }
             }
-            .disabled(viewModel.selectedNote == nil)
+        }
+    }
+
+    private var optionsMenu: some View {
+        Menu {
+            Button("Exportar como PDF", action: exportPDF)
+                .disabled(viewModel.selectedNote == nil)
         } label: {
             iconLabel("ellipsis")
         }

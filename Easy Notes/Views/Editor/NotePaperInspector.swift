@@ -3,8 +3,6 @@ import SwiftUI
 struct NotePaperInspector: View {
     @ObservedObject var note: Note
     let title: String
-    let paperStyle: GridStyle
-    let selectPaper: (GridStyle) -> Void
 
     private var relativeEditDate: String {
         note.updatedAt.formatted(.relative(presentation: .named).locale(Locale(identifier: "pt_BR")))
@@ -13,31 +11,20 @@ struct NotePaperInspector: View {
     var body: some View {
         VStack(spacing: 12) {
             ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("SUA NOTA")
-                            .studioSectionHeader()
-                        Text(title.isEmpty ? "Sem título" : title)
-                            .font(PixelTheme.uiFont(size: 14, weight: .semibold))
-                            .foregroundStyle(PixelTheme.ink)
-                            .lineLimit(2)
-                        Text("Caderno · \(note.notebook?.name ?? "Notas Soltas")")
-                            .foregroundStyle(PixelTheme.accent)
-                            .lineLimit(1)
-                        Text("Editada \(relativeEditDate)")
-                            .foregroundStyle(PixelTheme.muted)
-                    }
-                    .font(PixelTheme.uiFont(size: 12))
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("PAPEL")
-                            .studioSectionHeader()
-
-                        ForEach(GridStyle.allCases, id: \.self) { style in
-                            paperCard(style)
-                        }
-                    }
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("SUA NOTA")
+                        .studioSectionHeader()
+                    Text(title.isEmpty ? "Sem título" : title)
+                        .font(PixelTheme.uiFont(size: 14, weight: .semibold))
+                        .foregroundStyle(PixelTheme.ink)
+                        .lineLimit(2)
+                    Text("Caderno · \(note.notebook?.name ?? "Notas Soltas")")
+                        .foregroundStyle(PixelTheme.accent)
+                        .lineLimit(1)
+                    Text("Editada \(relativeEditDate)")
+                        .foregroundStyle(PixelTheme.muted)
                 }
+                .font(PixelTheme.uiFont(size: 12))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
@@ -58,9 +45,34 @@ struct NotePaperInspector: View {
             .padding(.bottom, 14)
         }
     }
+}
+
+struct NoteSettingsPopover: View {
+    @ObservedObject var note: Note
+    let selectPaper: (GridStyle) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Configurações da nota")
+                .font(PixelTheme.uiFont(size: 13, weight: .semibold))
+                .foregroundStyle(PixelTheme.ink)
+                .accessibilityAddTraits(.isHeader)
+                .padding(.bottom, 4)
+
+            Text("PAPEL")
+                .studioSectionHeader()
+
+            ForEach(GridStyle.allCases, id: \.self) { style in
+                paperCard(style)
+            }
+        }
+        .padding(16)
+        .frame(width: 248)
+        .background(PixelTheme.paper)
+    }
 
     private func paperCard(_ style: GridStyle) -> some View {
-        let isSelected = style == paperStyle
+        let isSelected = style == (GridStyle(rawValue: note.gridStyle) ?? .none)
 
         return Button {
             selectPaper(style)
