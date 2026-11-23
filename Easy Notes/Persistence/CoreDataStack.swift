@@ -9,7 +9,7 @@ public class CoreDataStack {
         return container.viewContext
     }
     
-    private init() {
+    static func makeModel() -> NSManagedObjectModel {
         let model = NSManagedObjectModel()
         
         // --- 1. Entity: Notebook ---
@@ -286,7 +286,11 @@ public class CoreDataStack {
         // --- 5. Configure Model ---
         model.entities = [notebookEntity, noteEntity, strokeEntity, shapeEntity]
         
-        container = NSPersistentContainer(name: "EasyNotesModel", managedObjectModel: model)
+        return model
+    }
+
+    private init() {
+        container = NSPersistentContainer(name: "EasyNotesModel", managedObjectModel: Self.makeModel())
         if let description = container.persistentStoreDescriptions.first {
             description.shouldMigrateStoreAutomatically = true
             description.shouldInferMappingModelAutomatically = true
