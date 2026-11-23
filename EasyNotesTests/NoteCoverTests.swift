@@ -17,6 +17,48 @@ final class NoteCoverTests: XCTestCase {
         super.tearDown()
     }
 
+    @MainActor
+    func testGridCardRendersCustomImageAtBothSideEdges() throws {
+        struct CardFixture: View {
+            let note: Note
+            @FocusState var focus: UUID?
+
+            var body: some View {
+                NoteCardView(
+                    note: note, isMenuPresented: .constant(false),
+                    focusedMenuTriggerNoteID: $focus, onOpenNote: {},
+                    onToggleMenu: {}, onOpenMenu: {}
+                ) { EmptyView() }
+                .frame(width: 240)
+            }
+        }
+
+        let viewModel = NoteViewModel(context: TestSupport.makeInMemoryContext())
+        viewModel.addNote(title: "Capa panorâmica")
+        let note = try XCTUnwrap(viewModel.selectedNote)
+        try viewModel.setCover(for: note, data: makePNGData(width: 120, height: 40), contentType: .png)
+        let host = NSHostingView(rootView: CardFixture(note: note))
+        let window = NSWindow(contentRect: CGRect(origin: .zero, size: host.fittingSize),
+                              styleMask: .borderless, backing: .buffered, defer: false)
+        window.contentView = host
+        window.displayIfNeeded()
+        let deadline = Date().addingTimeInterval(2)
+        repeat {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.03))
+            host.layoutSubtreeIfNeeded()
+            let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+            host.cacheDisplay(in: host.bounds, to: bitmap)
+            let samples = [0.06, 0.94].compactMap { fraction in
+                bitmap.colorAt(x: Int(Double(bitmap.pixelsWide) * fraction), y: bitmap.pixelsHigh / 2)?
+                    .usingColorSpace(.sRGB)
+            }
+            if samples.count == 2 && samples.allSatisfy({ $0.blueComponent - $0.greenComponent > 0.3 }) {
+                return
+            }
+        } while Date() < deadline
+        XCTFail("A imagem violeta deveria alcançar as duas laterais do cartão.")
+    }
+
     // MARK: - Helpers
 
     private func makeTempDirectory() throws -> URL {
