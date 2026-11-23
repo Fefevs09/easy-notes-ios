@@ -3,6 +3,7 @@ import UniformTypeIdentifiers
 
 struct NoteListView: View {
     @EnvironmentObject var viewModel: NoteViewModel
+    @State private var isCreatingNote = false
 
     var body: some View {
         List(selection: $viewModel.selectedNote) {
@@ -78,6 +79,7 @@ struct NoteListView: View {
                 }
             }
         }
+        .sheet(isPresented: $isCreatingNote) { NewNoteSheet() }
         .listStyle(.inset)
         .scrollContentBackground(.hidden)
         .background(PixelTheme.surface)
@@ -154,7 +156,7 @@ struct NoteListView: View {
                             .help("Importar PDF")
 
                             Button(action: {
-                                viewModel.addNote()
+                                isCreatingNote = true
                             }) {
                                 Image(systemName: "plus")
                                     .font(.system(size: 13.5, weight: .semibold))
@@ -166,6 +168,7 @@ struct NoteListView: View {
                                     )
                             }
                             .buttonStyle(.plain)
+                            .accessibilityLabel("Nova nota")
                             .help("Nova Nota")
                         }
                     }

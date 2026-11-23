@@ -12,6 +12,7 @@ struct NotesView: View {
     }
 
     @EnvironmentObject var viewModel: NoteViewModel
+    @State private var isCreatingNote = false
 
     @AppStorage("easyNotes.libraryIsGridView") private var isGridView = true
     @FocusState private var isSearchFocused: Bool
@@ -109,6 +110,7 @@ struct NotesView: View {
             .background(PixelTheme.surface)
         }
         .background(PixelTheme.surface)
+        .sheet(isPresented: $isCreatingNote) { NewNoteSheet() }
         .onChange(of: viewModel.selectedFilter) { _, _ in
             closeMenu(restoreFocus: false)
         }
@@ -195,9 +197,7 @@ struct NotesView: View {
                     .buttonStyle(.plain)
 
                     Button(action: {
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                            viewModel.addNote()
-                        }
+                        isCreatingNote = true
                     }) {
                         HStack(spacing: 6) {
                             Image(systemName: "plus")

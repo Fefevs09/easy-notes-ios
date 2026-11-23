@@ -178,9 +178,15 @@ func renderShapes(for note: Note, pageIndex: Int, into context: CGContext) {
 /// is the overlay's bounds on screen and the page mediaBox during export — both
 /// share the shape/stroke coordinate space, so the same code serves both.
 func renderGrid(for note: Note, in bounds: CGRect, into context: CGContext) {
-    guard let style = GridStyle(rawValue: note.gridStyle), style != .none else { return }
-    let spacing = CGFloat(max(4.0, note.gridSpacing))
-    let ox = CGFloat(note.gridOriginX), oy = CGFloat(note.gridOriginY)
+    guard let style = GridStyle(rawValue: note.gridStyle) else { return }
+    renderGrid(style: style, spacing: CGFloat(max(4, note.gridSpacing)),
+               origin: CGPoint(x: CGFloat(note.gridOriginX), y: CGFloat(note.gridOriginY)),
+               in: bounds, into: context)
+}
+
+func renderGrid(style: GridStyle, spacing: CGFloat, origin: CGPoint, in bounds: CGRect, into context: CGContext) {
+    guard style != .none else { return }
+    let ox = origin.x, oy = origin.y
 
     // First grid line at or after the left/bottom edge, phase-aligned to origin.
     func firstLine(min: CGFloat, origin: CGFloat) -> CGFloat {

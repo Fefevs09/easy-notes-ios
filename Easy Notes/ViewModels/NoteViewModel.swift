@@ -13,6 +13,18 @@ public enum FilterType: Hashable {
 }
 
 
+public enum NoteOrientation: String, CaseIterable {
+    case portrait = "Vertical"
+    case landscape = "Horizontal"
+
+    var pageSize: CGSize {
+        switch self {
+        case .portrait: CGSize(width: 612, height: 792)
+        case .landscape: CGSize(width: 792, height: 612)
+        }
+    }
+}
+
 enum PDFExportError: Error, Equatable {
     case documentUnavailable
     case contextCreationFailed
@@ -276,7 +288,8 @@ public class NoteViewModel: ObservableObject {
         loadNotes()
     }
     
-    public func addNote(title: String = "Nova Nota", content: String = "") {
+    public func addNote(title: String = "Nova Nota", content: String = "",
+                        paper: GridStyle = .none, orientation: NoteOrientation = .portrait) {
         // Prevent note creation when in Trash view
         if selectedFilter == .trash {
             selectedFilter = .all
@@ -289,7 +302,8 @@ public class NoteViewModel: ObservableObject {
         note.createdAt = Date()
         note.updatedAt = Date()
         note.isTrashed = false
-        note.pdfData = createBlankPDF(pageCount: 1)
+        note.gridStyle = paper.rawValue
+        note.pdfData = createBlankPDF(pageCount: 1, size: orientation.pageSize)
         note.pageCount = 1
         
         // Associate with notebook if active filter is notebook
@@ -388,12 +402,8 @@ public class NoteViewModel: ObservableObject {
         } else {
             pdfDoc = PDFDocument(data: createBlankPDF(pageCount: Int(max(1, note.pageCount)))) ?? PDFDocument()
         }
-        pdfDoc.delegate = pdfDelegate
-        
-        let blankPage = AnnotatedPDFPage()
-        blankPage.note = note
-        let size = pdfDoc.pageCount > 0 ? (pdfDoc.page(at: 0)?.bounds(for: .mediaBox).size ?? CGSize(width: 612, height: 792)) : CGSize(width: 612, height: 792)
-        blankPage.setBounds(CGRect(origin: .zero, size: size), for: .mediaBox)
+        let size = pdfDoc.page(at: 0)?.bounds(for: .mediaBox).size ?? NoteOrientation.portrait.pageSize
+        guard let blankPage = PDFDocument(data: createBlankPDF(pageCount: 1, size: size))?.page(at: 0) else { return }
         pdfDoc.insert(blankPage, at: pdfDoc.pageCount)
         
         note.pdfData = pdfDoc.dataRepresentation()
@@ -408,13 +418,17 @@ public class NoteViewModel: ObservableObject {
     
     // MARK: - PDF Drawing and Document Helpers
     public func createBlankPDF(pageCount: Int) -> Data {
+        createBlankPDF(pageCount: pageCount, size: NoteOrientation.portrait.pageSize)
+    }
+
+    private func createBlankPDF(pageCount: Int, size: CGSize) -> Data {
         let pdfData = NSMutableData()
         guard let consumer = CGDataConsumer(data: pdfData as CFMutableData),
               let context = CGContext(consumer: consumer, mediaBox: nil, nil) else {
             return Data()
         }
         
-        var mediaBox = CGRect(x: 0, y: 0, width: 612, height: 792) // Letter size
+        var mediaBox = CGRect(origin: .zero, size: size)
         
         for _ in 0..<pageCount {
             context.beginPage(mediaBox: &mediaBox)
@@ -451,7 +465,10 @@ public class NoteViewModel: ObservableObject {
 
     // MARK: - PDF Export
     public func exportPDF(for note: Note, to url: URL) throws {
-        guard let sourceDoc = getPDFDocument(for: note), sourceDoc.pageCount > 0 else {
+        // Start from the stored pages so the editor's drawing delegate cannot
+        // paint the paper and annotations a second time during export.
+        let data = note.pdfData ?? createBlankPDF(pageCount: Int(max(1, note.pageCount)))
+        guard let sourceDoc = PDFDocument(data: data), sourceDoc.pageCount > 0 else {
             throw PDFExportError.documentUnavailable
         }
 
