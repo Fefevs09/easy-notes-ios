@@ -182,6 +182,11 @@ public class CanvasViewModel: ObservableObject {
         isDrawingMode = true
     }
 
+    public func selectShape(_ kind: ShapeKind) {
+        activeShapeKind = kind
+        selectTool(.shape)
+    }
+
     /// Switches to reading mode: the PDF's default pointer/interactions take
     /// over and the custom drawing cursor is no longer shown.
     public func enableReadingMode() {

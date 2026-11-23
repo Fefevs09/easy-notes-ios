@@ -12,6 +12,8 @@ struct EditorToolbarView: View {
     @State private var isSizePopoverPresented = false
     @State private var isNoteSettingsPresented = false
     @State private var isColorPopoverPresented = false
+    @State private var isShapePopoverPresented = false
+    @FocusState private var isShapeTriggerFocused: Bool
     @State private var hoveredPresetName: String? = nil
 
     private var isPenTool: Bool {
@@ -34,12 +36,16 @@ struct EditorToolbarView: View {
             primaryBar
             contextualBar
         }
-        .onChange(of: contextualTool) { _, _ in
+        .onChange(of: contextualTool) { _, newTool in
             isSizePopoverPresented = false
             isColorPopoverPresented = false
+            if newTool != .shape {
+                isShapePopoverPresented = false
+            }
         }
         .onChange(of: viewModel.selectedNote?.id) { _, _ in
             isNoteSettingsPresented = false
+            isShapePopoverPresented = false
         }
     }
 
@@ -61,28 +67,32 @@ struct EditorToolbarView: View {
             separator
 
             primaryTool("Seleção", icon: "cursorarrow", isSelected: contextualTool == .select) {
+                isShapePopoverPresented = false
                 canvasVM.enableReadingMode()
             }
 
             primaryTool("Caneta", icon: "pencil.tip", isSelected: canvasVM.isDrawingMode && isPenTool) {
+                isShapePopoverPresented = false
                 if !canvasVM.isDrawingMode || !isPenTool {
                     canvasVM.selectTool(isPenTool ? canvasVM.activeTool : .fountainPen)
                 }
             }
 
             primaryTool("Marca-texto", icon: "highlighter", isSelected: contextualTool == .highlighter) {
+                isShapePopoverPresented = false
                 if contextualTool != .highlighter {
                     canvasVM.selectTool(.highlighter)
                 }
             }
 
             primaryTool("Borracha", icon: "eraser", isSelected: contextualTool == .eraser) {
+                isShapePopoverPresented = false
                 if contextualTool != .eraser {
                     canvasVM.selectTool(.eraser)
                 }
             }
 
-            shapesMenu
+            shapePickerButton
             separator
 
             Button {
@@ -117,27 +127,52 @@ struct EditorToolbarView: View {
         .modifier(ToolbarRow(height: 46, fill: PixelTheme.paper, hairline: 1 / displayScale))
     }
 
-    private var shapesMenu: some View {
-        Menu {
-            ForEach(ShapeKind.drawable, id: \.self) { kind in
-                Button {
-                    canvasVM.activeShapeKind = kind
-                    canvasVM.selectTool(.shape)
-                } label: {
-                    Label(kind.displayName, systemImage: kind.systemImage)
-                }
+    private var shapePickerButton: some View {
+        ShapePickerTriggerButton(
+            activeShape: canvasVM.activeShapeKind,
+            isActive: contextualTool == .shape,
+            isOpen: isShapePopoverPresented,
+            isFocused: $isShapeTriggerFocused
+        ) {
+            let willOpen = !isShapePopoverPresented
+            if willOpen {
+                isColorPopoverPresented = false
+                isSizePopoverPresented = false
+                isNoteSettingsPresented = false
             }
-        } label: {
-            primaryLabel("Formas", icon: "square.on.circle", isSelected: contextualTool == .shape)
+            isShapePopoverPresented = willOpen
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .help("Formas geométricas")
+        .popover(isPresented: $isShapePopoverPresented, arrowEdge: .bottom) {
+            ShapePickerPopoverView(
+                activeShape: canvasVM.activeShapeKind,
+                isShapeToolActive: contextualTool == .shape,
+                onSelect: { kind, restoreFocus in
+                    canvasVM.selectShape(kind)
+                    closeShapePopover(restoreFocus: restoreFocus)
+                },
+                onCancel: {
+                    closeShapePopover(restoreFocus: true)
+                }
+            )
+            .presentationBackground(PixelTheme.paper)
+        }
+    }
+
+    private func closeShapePopover(restoreFocus: Bool) {
+        isShapePopoverPresented = false
+        guard restoreFocus else { return }
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                isShapeTriggerFocused = true
+            }
+        }
     }
 
     private var noteSettingsButton: some View {
         Button {
+            isShapePopoverPresented = false
+            isColorPopoverPresented = false
+            isSizePopoverPresented = false
             isNoteSettingsPresented.toggle()
         } label: {
             iconLabel("gearshape", color: isNoteSettingsPresented ? PixelTheme.accent : PixelTheme.inkSecondary)
@@ -276,6 +311,8 @@ struct EditorToolbarView: View {
                 isOpen: isColorPopoverPresented
             ) {
                 isSizePopoverPresented = false
+                isShapePopoverPresented = false
+                isNoteSettingsPresented = false
                 isColorPopoverPresented.toggle()
             }
             .popover(isPresented: $isColorPopoverPresented, arrowEdge: .bottom) {
@@ -344,6 +381,8 @@ struct EditorToolbarView: View {
             optionLabel(title)
             Button {
                 isColorPopoverPresented = false
+                isShapePopoverPresented = false
+                isNoteSettingsPresented = false
                 isSizePopoverPresented.toggle()
             } label: {
                 HStack(spacing: 5) {
