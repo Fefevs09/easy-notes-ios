@@ -7,7 +7,7 @@ Permitir posicionar e reconhecer linhas, setas, retângulos e elipses durante o 
 ## Investigação e decisões
 
 - `NoteViewModel.createBlankPDF` preenche a caixa da página com branco opaco. Documentos importados fornecem sua própria imagem de fundo. `PDFView.backgroundColor` colore a área externa à folha. A cor dinâmica de texto usada pela mira podia ficar branca no modo escuro.
-- A mira usa braços e centro pretos com contorno branco. As duas cores coexistem para que partes vizinhas claras e escuras do PDF possam ser atravessadas sem amostrar a página a cada movimento.
+- A mira tem núcleo preto sobre páginas claras e branco sobre páginas escuras, com aro da cor oposta. A primeira consulta renderiza o PDF base em 16 × 16 amostras de cinza. A maioria dessas amostras determina a polaridade por página, guardada em cache com chave fraca. Nas regiões de luminosidade diferente da maioria, o aro fornece contraste local.
 - O overlay desenha a linha da cor escolhida e sobrepõe pontos com núcleo preto e aro branco. O tracejado com extremidades redondas segue o mesmo CGPath da forma final, inclusive os dois subcaminhos da cabeça da seta. O intervalo normal é de dez pontos de tela. Em setas pequenas ele diminui para que cada asa receba marcação.
 
 ## Contratos
@@ -16,4 +16,12 @@ A prévia existe apenas durante a criação. O desenho usa coordenadas de págin
 
 ## Progresso e pendências
 
-Implementação e testes de bitmap para espaçamento, contraste e cobertura geométrica concluídos. A sondagem local com Core Graphics confirmou as amostras de linha a 25%, 100% e 400% e a cobertura das demais formas a 100%. A coordenação executará o build e a suíte Xcode no commit entregue. Conferência visual interativa em PDF importado e nos dois modos de aparência segue pendente.
+A implementação foi integrada sobre origin/main em 3c39b62, isolada da outra feature presente no checkout principal. O código de produção foi encaminhado à revisão no commit 3fa51f9. A primeira tentativa de revisão parou por limite de uso. A segunda foi delegada ao GPT-6.2 Sol com esforço baixo.
+
+Xcode 27.2, scheme Easy Notes, destino macOS. A base passou em 44 testes. O candidato passou em build e 47 testes, inclusive polaridade em duas páginas de PDF, pontos a 25%, 100% e 400% e asas da seta. Comando de reprodução:
+
+```sh
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild -project 'Easy Notes.xcodeproj' -scheme 'Easy Notes' -destination 'platform=macOS' build test
+```
+
+Pendente de conferência humana: sensação do arraste em PDF importado com conteúdo misto, aparência clara e escura, navegação por teclado e VoiceOver em sessão gráfica.

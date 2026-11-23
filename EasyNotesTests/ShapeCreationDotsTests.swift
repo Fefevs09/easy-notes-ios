@@ -1,7 +1,28 @@
 import AppKit
+import PDFKit
 import XCTest
 
 final class ShapeCreationDotsTests: XCTestCase {
+    func testCursorPolarityFollowsEachPDFPage() throws {
+        let data = NSMutableData()
+        let consumer = try XCTUnwrap(CGDataConsumer(data: data))
+        var bounds = CGRect(x: 0, y: 0, width: 100, height: 100)
+        let pdf = try XCTUnwrap(CGContext(consumer: consumer, mediaBox: &bounds, nil))
+        for gray: CGFloat in [1, 0] {
+            pdf.beginPDFPage(nil)
+            pdf.setFillColor(gray: gray, alpha: 1)
+            pdf.fill(bounds)
+            pdf.endPDFPage()
+        }
+        pdf.closePDF()
+        let document = try XCTUnwrap(PDFDocument(data: data as Data))
+        let light = try XCTUnwrap(document.page(at: 0))
+        let dark = try XCTUnwrap(document.page(at: 1))
+        XCTAssertFalse(shapePaperIsDark(light))
+        XCTAssertTrue(shapePaperIsDark(dark))
+        XCTAssertFalse(shapePaperIsDark(light))
+    }
+
     // Render in screen coordinates so spacing and contrast are observable
     // independently of the page coordinate system.
     private func bitmap(kind: ShapeKind, zoom: CGFloat) throws -> CGContext {
