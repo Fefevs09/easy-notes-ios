@@ -96,13 +96,29 @@ public struct NoteActionMenuModel: Equatable {
                     isDisabled: note.notebook == nil
                 )
             ]
+            let groups = Dictionary(grouping: notebooks, by: { $0.path })
+            var reservedTitles = Set(groups.keys)
+            reservedTitles.insert("Notas Soltas")
+            var uniqueTitles = [UUID: String]()
+            for (path, folders) in groups.sorted(by: { $0.key < $1.key })
+                where folders.count > 1 || path == "Notas Soltas" {
+                var number = 1
+                for folder in folders.sorted(by: { $0.id.uuidString < $1.id.uuidString }) {
+                    var title: String
+                    repeat {
+                        title = "\(path) (\(number))"
+                        number += 1
+                    } while !reservedTitles.insert(title).inserted
+                    uniqueTitles[folder.id] = title
+                }
+            }
             for notebook in notebooks {
                 let isCurrentNotebook = (note.notebook == notebook)
                 destinations.append(
                     NoteActionMenuDestination(
                         id: notebook.id.uuidString,
                         notebookID: notebook.id,
-                        title: notebook.path,
+                        title: uniqueTitles[notebook.id] ?? notebook.path,
                         isCurrent: isCurrentNotebook,
                         isDisabled: isCurrentNotebook,
                         swatchIndex: notebook.swatchIndex
@@ -1005,7 +1021,7 @@ private struct MoveDestinationRowButton: View {
                 Text(destination.title)
                     .font(PixelTheme.uiFont(size: 12, weight: destination.isCurrent ? .semibold : .medium))
                     .foregroundStyle(destination.isDisabled ? PixelTheme.muted : PixelTheme.ink)
-                    .lineLimit(1)
+                    .fixedSize(horizontal: false, vertical: true)
 
                 Spacer(minLength: 4)
 

@@ -757,6 +757,12 @@ final class NoteContextMenuTests: XCTestCase {
         let looseNote = try XCTUnwrap(viewModel.selectedNote)
 
         let looseModel = NoteActionMenuModel(note: looseNote, notebooks: [alpha, beta], filter: .all)
+        let originalName = beta.name
+        beta.name = alpha.name
+        let duplicateMenu = NoteActionMenuModel(note: looseNote, notebooks: [alpha, beta], filter: .all)
+        XCTAssertEqual(Set(duplicateMenu.moveDestinations.map(\.title)).count, 3)
+        XCTAssertEqual(duplicateMenu.moveDestinations.compactMap(\.notebookID), [alpha.id, beta.id])
+        beta.name = originalName
         XCTAssertFalse(looseModel.isTrashContext)
         XCTAssertEqual(looseModel.displayTitle, "Solta")
         XCTAssertNil(looseModel.displayEmoji)
