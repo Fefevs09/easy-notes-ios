@@ -11,6 +11,8 @@ struct EditorToolbarView: View {
     @Environment(\.displayScale) private var displayScale
     @State private var isSizePopoverPresented = false
     @State private var isNoteSettingsPresented = false
+    @State private var isColorPopoverPresented = false
+    @State private var hoveredPresetName: String? = nil
 
     private var isPenTool: Bool {
         switch canvasVM.activeTool {
@@ -34,6 +36,7 @@ struct EditorToolbarView: View {
         }
         .onChange(of: contextualTool) { _, _ in
             isSizePopoverPresented = false
+            isColorPopoverPresented = false
         }
         .onChange(of: viewModel.selectedNote?.id) { _, _ in
             isNoteSettingsPresented = false
@@ -261,67 +264,86 @@ struct EditorToolbarView: View {
     }
 
     private var colorOptions: some View {
-        let swatchNames: [LocalizedStringKey] = ["Carvão", "Violeta", "Sálvia", "Ocre", "Terracota"]
-
-        return HStack(spacing: 6) {
+        HStack(spacing: 6) {
             optionLabel("Cor")
-            ForEach(Array(zip(PixelTheme.presetSwatches, swatchNames)), id: \.0) { swatch, name in
-                presetColorButton(swatch, name: name)
+            ForEach(PixelTheme.presetSwatchDefinitions, id: \.name) { swatch in
+                presetColorButton(swatch.color, name: swatch.name)
             }
 
-            ColorPicker("Cor personalizada", selection: Binding(
-                get: { canvasVM.strokeColor },
-                set: { canvasVM.strokeColor = effectiveColor($0) }
-            ))
-            .labelsHidden()
-            .scaleEffect(0.85)
-            .help("Cor personalizada")
+            PenColorTriggerButton(
+                color: canvasVM.strokeColor,
+                toolContext: canvasVM.colorToolContext,
+                isOpen: isColorPopoverPresented
+            ) {
+                isSizePopoverPresented = false
+                isColorPopoverPresented.toggle()
+            }
+            .popover(isPresented: $isColorPopoverPresented, arrowEdge: .bottom) {
+                PenColorPopoverView(
+                    color: Binding(
+                        get: { canvasVM.strokeColor },
+                        set: { canvasVM.applyStrokeColor($0) }
+                    ),
+                    toolContext: canvasVM.colorToolContext,
+                    onClose: { isColorPopoverPresented = false }
+                )
+                .presentationBackground(PixelTheme.paper)
+            }
         }
         .fixedSize()
     }
 
-    private func effectiveColor(_ base: Color) -> Color {
-        canvasVM.activeTool == .highlighter ? base.withAlpha(CanvasViewModel.highlighterOpacity) : base
-    }
-
-    private func presetColorButton(_ color: Color, name: LocalizedStringKey) -> some View {
-        let display = effectiveColor(color)
-        let isSelected = canvasVM.strokeColor == display
+    private func presetColorButton(_ color: Color, name: String) -> some View {
+        let activeComponents = PenColorComponents.from(canvasVM.strokeColor)
+        let displayOpacity = canvasVM.activeTool == .highlighter
+            ? Double(CanvasViewModel.highlighterOpacity)
+            : PenColorComponents.clampedOpacity(activeComponents.opacity, for: canvasVM.colorToolContext)
+        let display = PenColorComponents.from(color).withOpacity(displayOpacity).swiftUIColor
+        let isSelected = activeComponents.matchesPreset(color)
+        let isHovered = hoveredPresetName == name
+        let borderColor: Color = isSelected
+            ? PixelTheme.accent
+            : (isHovered ? PixelTheme.inkSecondary : PixelTheme.borderStrong)
 
         return Button {
-            canvasVM.strokeColor = display
+            canvasVM.applyPresetColor(color)
         } label: {
-            Circle()
-                .fill(display)
-                .overlay {
-                    Circle()
-                        .strokeBorder(PixelTheme.paper, lineWidth: 1.5)
-                        .padding(1)
+            ZStack {
+                Circle()
+                    .fill(PixelTheme.paper)
+
+                Circle()
+                    .fill(display)
+                    .frame(width: 16, height: 16)
+
+                Circle()
+                    .strokeBorder(borderColor, lineWidth: isSelected ? 1.5 : 1)
+
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(PixelTheme.uiFont(size: 7.5, weight: .bold))
+                        .foregroundStyle(PixelTheme.ink)
+                        .frame(width: 12, height: 12)
+                        .background(PixelTheme.paper.opacity(0.90), in: Circle())
                 }
-                .overlay {
-                    Circle()
-                        .strokeBorder(isSelected ? PixelTheme.accent : PixelTheme.borderStrong)
-                }
-                .overlay {
-                    if isSelected {
-                        Image(systemName: "checkmark")
-                            .font(PixelTheme.uiFont(size: 8, weight: .bold))
-                            .foregroundStyle(PixelTheme.ink)
-                            .padding(2)
-                            .background(PixelTheme.paper.opacity(0.85), in: Circle())
-                    }
-                }
-                .frame(width: 20, height: 20)
+            }
+            .frame(width: 22, height: 22)
+            .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(Text(name))
+        .onHover { hovering in
+            hoveredPresetName = hovering ? name : (hoveredPresetName == name ? nil : hoveredPresetName)
+        }
+        .accessibilityLabel(Text("Cor \(name)"))
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .help("\(name) (\(PenColorComponents.from(color).hex6))")
     }
 
     private func sizeOptions(_ title: LocalizedStringKey) -> some View {
         HStack(spacing: 6) {
             optionLabel(title)
             Button {
+                isColorPopoverPresented = false
                 isSizePopoverPresented.toggle()
             } label: {
                 HStack(spacing: 5) {
@@ -418,7 +440,7 @@ struct EditorToolbarView: View {
 
         let savePanel = NSSavePanel()
         savePanel.allowedContentTypes = [.pdf]
-        savePanel.nameFieldStringValue = "\(note.title).pdf"
+        savePanel.nameFieldStringValue = note.suggestedPDFName
         savePanel.canCreateDirectories = true
 
         savePanel.begin { response in

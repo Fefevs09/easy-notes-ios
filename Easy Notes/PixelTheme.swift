@@ -20,6 +20,7 @@ enum PixelTheme {
     static let ink = Color(red: 0.137, green: 0.133, blue: 0.165)              // #23222A
     static let inkSecondary = Color(red: 0.353, green: 0.345, blue: 0.388)     // #5A5863
     static let muted = Color(red: 0.549, green: 0.537, blue: 0.580)            // #8C8994
+    static let popoverMuted = Color(red: 0.424, green: 0.412, blue: 0.455)     // #6C6974
 
     // MARK: - Brand & Semantic Accents
     static let accent = Color(red: 0.435, green: 0.322, blue: 0.878)           // #6F52E0
@@ -47,6 +48,14 @@ enum PixelTheme {
         inkSage,
         inkOchre,
         inkTerracotta
+    ]
+
+    static let presetSwatchDefinitions: [(name: String, color: Color)] = [
+        ("Carvão", inkCharcoal),
+        ("Violeta", inkViolet),
+        ("Sálvia", inkSage),
+        ("Ocre", inkOchre),
+        ("Terracota", inkTerracotta)
     ]
 
     // MARK: - Notebook Deterministic Colors & Card Banner Tints
@@ -93,6 +102,7 @@ enum PixelTheme {
     static let cardRadius: CGFloat = 12
     static let controlRadius: CGFloat = 8
     static let pillRadius: CGFloat = 8
+    static let compactRadius: CGFloat = 6
 
     static var nsCanvasBackground: NSColor {
         NSColor(calibratedRed: 0.945, green: 0.937, blue: 0.914, alpha: 1.0)

@@ -8,12 +8,27 @@
 
 /* Begin PBXFileReference section */
 		11793CCA2FC4A1D700CF8713 /* Easy Notes.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Easy Notes.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		D129085E7B9257D5AD839BF1 /* EasyNotesTests.xctest */ = {
+			isa = PBXFileReference;
+			explicitFileType = wrapper.cfbundle;
+			includeInIndex = 0;
+			path = EasyNotesTests.xctest;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		11793CCC2FC4A1D700CF8713 /* Easy Notes */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				AABD8F0272615718A609E6C1 /* Test exclusions */,
+			);
 			path = "Easy Notes";
+			sourceTree = "<group>";
+		};
+		62F973745CC553DFB9B3CD1B /* EasyNotesTests sources */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = EasyNotesTests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -28,11 +43,23 @@
 		};
 /* End PBXFrameworksBuildPhase section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		AABD8F0272615718A609E6C1 /* Test exclusions */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Assets.xcassets,
+				Easy_NotesApp.swift,
+			);
+			target = 46885B2196D35F839FFB6DFA /* EasyNotesTests */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXGroup section */
 		11793CC12FC4A1D700CF8713 = {
 			isa = PBXGroup;
 			children = (
 				11793CCC2FC4A1D700CF8713 /* Easy Notes */,
+				62F973745CC553DFB9B3CD1B /* EasyNotesTests sources */,
 				11793CCB2FC4A1D700CF8713 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -41,6 +68,7 @@
 			isa = PBXGroup;
 			children = (
 				11793CCA2FC4A1D700CF8713 /* Easy Notes.app */,
+				D129085E7B9257D5AD839BF1 /* EasyNotesTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -69,6 +97,23 @@
 			productName = "Easy Notes";
 			productReference = 11793CCA2FC4A1D700CF8713 /* Easy Notes.app */;
 			productType = "com.apple.product-type.application";
+		};
+		46885B2196D35F839FFB6DFA /* EasyNotesTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 9CF5629119EA5F82BD9AA2F4 /* Configurations for EasyNotesTests */;
+			buildPhases = (
+				B0FF30718D51539DA0CCD42A /* Test Sources */,
+			);
+			buildRules = ();
+			dependencies = ();
+			fileSystemSynchronizedGroups = (
+				11793CCC2FC4A1D700CF8713 /* Easy Notes */,
+				62F973745CC553DFB9B3CD1B /* EasyNotesTests sources */,
+			);
+			name = EasyNotesTests;
+			productName = EasyNotesTests;
+			productReference = D129085E7B9257D5AD839BF1 /* EasyNotesTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
 		};
 /* End PBXNativeTarget section */
 
@@ -100,6 +145,7 @@
 			projectRoot = "";
 			targets = (
 				11793CC92FC4A1D700CF8713 /* Easy Notes */,
+				46885B2196D35F839FFB6DFA /* EasyNotesTests */,
 			);
 		};
 /* End PBXProject section */
@@ -120,6 +166,12 @@
 			buildActionMask = 2147483647;
 			files = (
 			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B0FF30718D51539DA0CCD42A /* Test Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = ();
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
@@ -323,6 +375,36 @@
 			};
 			name = Release;
 		};
+		4921C034BC8356B787264FA3 /* Tests Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.2;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.felipevieira.Easy-Notes.Tests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		468F7C8C04595BAA972A0E98 /* Tests Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.2;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.felipevieira.Easy-Notes.Tests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -340,6 +422,15 @@
 			buildConfigurations = (
 				11793CD62FC4A1D900CF8713 /* Debug */,
 				11793CD72FC4A1D900CF8713 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		9CF5629119EA5F82BD9AA2F4 /* Configurations for EasyNotesTests */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4921C034BC8356B787264FA3 /* Tests Debug */,
+				468F7C8C04595BAA972A0E98 /* Tests Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

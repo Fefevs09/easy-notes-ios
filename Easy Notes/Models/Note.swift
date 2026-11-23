@@ -24,6 +24,10 @@ public class Note: NSManagedObject {
     @NSManaged public var gridOriginX: Float
     @NSManaged public var gridOriginY: Float
 
+    public var suggestedPDFName: String {
+        (title.isEmpty ? "Sem título" : title) + ".pdf"
+    }
+
     public var strokesArray: [Stroke] {
         let set = strokes as? Set<Stroke> ?? []
         return Array(set)

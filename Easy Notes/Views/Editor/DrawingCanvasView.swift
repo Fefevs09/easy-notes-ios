@@ -303,7 +303,7 @@ extension NSColor {
     }
     
     var hexString: String {
-        guard let colorSpaceCorrected = self.usingColorSpace(.deviceRGB) else {
+        guard let colorSpaceCorrected = self.usingColorSpace(.sRGB) ?? self.usingColorSpace(.deviceRGB) else {
             return "#000000"
         }
         let r = Int(round(colorSpaceCorrected.redComponent * 255.0))
