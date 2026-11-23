@@ -77,7 +77,7 @@ struct ThumbnailBarView: View {
     }
 }
 
-private struct PageThumbnail: View {
+struct PageThumbnail: View {
     let page: PDFPage
     let number: Int
     let isSelected: Bool
@@ -123,7 +123,38 @@ private struct PageThumbnail: View {
         }
         .contentShape(Rectangle())
         .task(id: ObjectIdentifier(page)) {
-            thumbnailImage = page.thumbnail(of: CGSize(width: 224, height: 296), for: .mediaBox)
+            thumbnailImage = Self.renderThumbnail(for: page)
         }
+    }
+
+    static func renderThumbnail(for page: PDFPage) -> NSImage {
+        let mediaBox = page.bounds(for: .mediaBox)
+        let size = CGSize(width: 224, height: 296)
+        let image = page.thumbnail(of: size, for: .mediaBox)
+        guard let annotatedPage = page as? AnnotatedPDFPage,
+              let note = annotatedPage.note else { return image }
+
+        let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(size.width), pixelsHigh: Int(size.height),
+                                   bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+                                   isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+        let graphics = NSGraphicsContext(bitmapImageRep: rep)!
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = graphics
+        let context = graphics.cgContext
+        context.setFillColor(NSColor.white.cgColor)
+        context.fill(CGRect(origin: .zero, size: size))
+        context.saveGState()
+        context.translateBy(x: -mediaBox.minX * size.width / mediaBox.width,
+                            y: -mediaBox.minY * size.height / mediaBox.height)
+        context.scaleBy(x: size.width / mediaBox.width, y: size.height / mediaBox.height)
+        image.draw(in: mediaBox)
+        renderGrid(for: note, in: mediaBox, into: context)
+        renderShapes(for: note, pageIndex: 0, into: context)
+        renderStrokes(for: note, pageIndex: 0, into: context)
+        context.restoreGState()
+        NSGraphicsContext.restoreGraphicsState()
+        let output = NSImage(size: size)
+        output.addRepresentation(rep)
+        return output
     }
 }
