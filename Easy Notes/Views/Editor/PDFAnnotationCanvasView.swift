@@ -18,9 +18,7 @@ func deserializeStrokePoints(_ str: String) -> [CGPoint] {
 }
 
 /// Draws every Stroke belonging to `note` on `pageIndex` directly into `context`,
-/// in the page's own mediaBox coordinate space. Used both by AnnotatedPDFPage's
-/// draw override and directly by NoteViewModel.exportPDF (which cannot rely on
-/// PDFKit actually instantiating AnnotatedPDFPage for pages parsed from data).
+/// in the page's mediaBox coordinate space for thumbnails and PDF export.
 func renderStrokes(for note: Note, pageIndex: Int, into context: CGContext) {
     let strokesSet = note.strokes as? Set<Stroke> ?? []
     let pageStrokes = strokesSet.filter { $0.pageIndex == Int16(pageIndex) }
@@ -216,10 +214,17 @@ func renderGrid(for note: Note, in bounds: CGRect, into context: CGContext) {
     guard let style = GridStyle(rawValue: note.gridStyle) else { return }
     renderGrid(style: style, spacing: CGFloat(max(4, note.gridSpacing)),
                origin: CGPoint(x: CGFloat(note.gridOriginX), y: CGFloat(note.gridOriginY)),
-               in: bounds, into: context)
+               color: note.gridInk, in: bounds, into: context)
 }
 
-func renderGrid(style: GridStyle, spacing: CGFloat, origin: CGPoint, in bounds: CGRect, into context: CGContext) {
+extension Note {
+    var gridInk: NSColor {
+        guard let hex = gridColorHex, let components = PenColorComponents.fromHex(hex) else { return .black }
+        return NSColor(components.opaqueColor)
+    }
+}
+
+func renderGrid(style: GridStyle, spacing: CGFloat, origin: CGPoint, color: NSColor = .black, in bounds: CGRect, into context: CGContext) {
     guard style != .none else { return }
     let ox = origin.x, oy = origin.y
 
@@ -229,8 +234,7 @@ func renderGrid(style: GridStyle, spacing: CGFloat, origin: CGPoint, in bounds: 
     }
 
     context.saveGState()
-    let minor = NSColor.systemBlue.withAlphaComponent(0.16).cgColor
-    let axis = NSColor.systemBlue.withAlphaComponent(0.45).cgColor
+    let minor = color.withAlphaComponent(0.16).cgColor
 
     if style == .dots {
         context.setFillColor(minor)
@@ -268,43 +272,7 @@ func renderGrid(style: GridStyle, spacing: CGFloat, origin: CGPoint, in bounds: 
     }
     context.strokePath()
 
-    // Emphasize the cartesian axes for the full quadrille.
-    if style == .grid {
-        context.setLineWidth(1.0)
-        context.setStrokeColor(axis)
-        if oy >= bounds.minY && oy <= bounds.maxY {
-            context.move(to: CGPoint(x: bounds.minX, y: oy))
-            context.addLine(to: CGPoint(x: bounds.maxX, y: oy))
-        }
-        if ox >= bounds.minX && ox <= bounds.maxX {
-            context.move(to: CGPoint(x: ox, y: bounds.minY))
-            context.addLine(to: CGPoint(x: ox, y: bounds.maxY))
-        }
-        context.strokePath()
-    }
     context.restoreGState()
-}
-
-class AnnotatedPDFPage: PDFPage {
-    weak var note: Note?
-
-    override func draw(with box: PDFDisplayBox, to context: CGContext) {
-        super.draw(with: box, to: context)
-
-        guard let doc = self.document,
-              let note = note else { return }
-
-        let pageIndex = doc.index(for: self)
-        renderGrid(for: note, in: self.bounds(for: box), into: context)
-        renderShapes(for: note, pageIndex: pageIndex, into: context)
-        renderStrokes(for: note, pageIndex: pageIndex, into: context)
-    }
-}
-
-class AnnotatedPDFDelegate: NSObject, PDFDocumentDelegate {
-    func `class`(forPage pageType: PDFPage.Type) -> AnyClass {
-        return AnnotatedPDFPage.self
-    }
 }
 
 /// Cached tool cursor, keyed on the inputs that affect its appearance, so the

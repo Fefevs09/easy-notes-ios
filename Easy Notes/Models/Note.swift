@@ -20,6 +20,7 @@ public class Note: NSManagedObject {
     // origin in page points — reserved so future function plotting can map math
     // coordinates onto the page consistently with the visible grid.
     @NSManaged public var gridStyle: String
+    @NSManaged public var gridColorHex: String?
     @NSManaged public var gridSpacing: Float
     @NSManaged public var gridOriginX: Float
     @NSManaged public var gridOriginY: Float

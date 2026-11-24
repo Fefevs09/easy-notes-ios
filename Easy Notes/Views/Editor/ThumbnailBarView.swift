@@ -37,11 +37,11 @@ struct ThumbnailBarView: View {
                 ScrollView {
                     LazyVStack(spacing: 14) {
                         ForEach(0..<pageCount, id: \.self) { index in
-                            if let page = pdfDocument?.page(at: index) {
+                            if let page = pdfDocument?.page(at: index), let note = noteVM.selectedNote {
                                 Button {
                                     selectedPageIndex = index
                                 } label: {
-                                    PageThumbnail(page: page, number: index + 1, isSelected: selectedPageIndex == index)
+                                    PageThumbnail(note: note, page: page, number: index + 1, isSelected: selectedPageIndex == index)
                                 }
                                 .buttonStyle(.plain)
                                 .accessibilityLabel("Página \(index + 1)")
@@ -78,6 +78,7 @@ struct ThumbnailBarView: View {
 }
 
 struct PageThumbnail: View {
+    @ObservedObject var note: Note
     let page: PDFPage
     let number: Int
     let isSelected: Bool
@@ -122,17 +123,18 @@ struct PageThumbnail: View {
                 }
         }
         .contentShape(Rectangle())
-        .task(id: ObjectIdentifier(page)) {
-            thumbnailImage = Self.renderThumbnail(for: page)
+        .task(id: note.updatedAt) {
+            thumbnailImage = Self.renderThumbnail(for: page, note: note, pageIndex: number - 1)
         }
+        .id(ObjectIdentifier(page))
     }
 
-    static func renderThumbnail(for page: PDFPage) -> NSImage {
+    static func renderThumbnail(for page: PDFPage, note: Note, pageIndex: Int) -> NSImage {
         let mediaBox = page.bounds(for: .mediaBox)
-        let size = CGSize(width: 224, height: 296)
-        let image = page.thumbnail(of: size, for: .mediaBox)
-        guard let annotatedPage = page as? AnnotatedPDFPage,
-              let note = annotatedPage.note else { return image }
+        guard mediaBox.width > 0, mediaBox.height > 0 else { return NSImage() }
+        let scale = min(224 / mediaBox.width, 296 / mediaBox.height)
+        let size = CGSize(width: max(1, (mediaBox.width * scale).rounded()),
+                          height: max(1, (mediaBox.height * scale).rounded()))
 
         let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(size.width), pixelsHigh: Int(size.height),
                                    bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
@@ -147,10 +149,10 @@ struct PageThumbnail: View {
         context.translateBy(x: -mediaBox.minX * size.width / mediaBox.width,
                             y: -mediaBox.minY * size.height / mediaBox.height)
         context.scaleBy(x: size.width / mediaBox.width, y: size.height / mediaBox.height)
-        image.draw(in: mediaBox)
+        page.draw(with: .mediaBox, to: context)
         renderGrid(for: note, in: mediaBox, into: context)
-        renderShapes(for: note, pageIndex: 0, into: context)
-        renderStrokes(for: note, pageIndex: 0, into: context)
+        renderShapes(for: note, pageIndex: pageIndex, into: context)
+        renderStrokes(for: note, pageIndex: pageIndex, into: context)
         context.restoreGState()
         NSGraphicsContext.restoreGraphicsState()
         let output = NSImage(size: size)

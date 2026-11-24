@@ -183,7 +183,10 @@ struct EditorToolbarView: View {
         .help("Configurações da nota")
         .popover(isPresented: $isNoteSettingsPresented, arrowEdge: .top) {
             if let note = viewModel.selectedNote {
-                NoteSettingsPopover(note: note) { style in
+                NoteSettingsPopover(note: note, selectColor: { color in
+                    guard viewModel.selectedNote === note else { return }
+                    viewModel.setGridColor(color, for: note)
+                }) { style in
                     guard viewModel.selectedNote === note,
                           style != (GridStyle(rawValue: note.gridStyle) ?? .none) else { return }
                     viewModel.setGridStyle(style, for: note)
