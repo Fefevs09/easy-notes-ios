@@ -27,11 +27,6 @@ public enum NoteOrientation: String, CaseIterable {
     }
 }
 
-enum PDFExportError: Error, Equatable {
-    case documentUnavailable
-    case contextCreationFailed
-}
-
 public enum SortOption: String, CaseIterable, Identifiable {
     case dateModifiedDescending = "Date modified (recent first)"
     case dateModifiedAscending = "Date modified (oldest first)"
@@ -236,7 +231,7 @@ public class NoteViewModel: ObservableObject {
         selectedFilter = .notebook(notebook)
     }
     
-    func editTitle(of note: Note, to title: String) {
+    public func editTitle(of note: Note, to title: String) {
         guard note.managedObjectContext === context, !note.isDeleted, note.title != title else { return }
         note.title = title
         note.updatedAt = Date()
@@ -247,7 +242,7 @@ public class NoteViewModel: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
     }
 
-    func flushTitleEdits() {
+    public func flushTitleEdits() {
         guard hasPendingTitle else { return }
         pendingTitleSave?.cancel()
         pendingTitleSave = nil
@@ -477,11 +472,23 @@ public class NoteViewModel: ObservableObject {
 
     // MARK: - PDF Export
     public func exportPDF(for note: Note, to url: URL) throws {
+        try exportPDF(for: note, to: url, options: .default)
+    }
+
+    public func exportPDF(for note: Note, to url: URL, options: PDFExportOptions) throws {
         // Start from the stored pages so the editor's drawing delegate cannot
         // paint the paper and annotations a second time during export.
         let data = note.pdfData ?? createBlankPDF(pageCount: Int(max(1, note.pageCount)))
         guard let sourceDoc = PDFDocument(data: data), sourceDoc.pageCount > 0 else {
             throw PDFExportError.documentUnavailable
+        }
+
+        let pagesToExport: [Int]
+        if let range = options.pageRange {
+            let validatedRange = try PDFExportOptions.validate(range: range, pageCount: sourceDoc.pageCount)
+            pagesToExport = Array(validatedRange)
+        } else {
+            pagesToExport = Array(0..<sourceDoc.pageCount)
         }
 
         let outputData = NSMutableData()
@@ -490,12 +497,14 @@ public class NoteViewModel: ObservableObject {
             throw PDFExportError.contextCreationFailed
         }
 
-        for pageIndex in 0..<sourceDoc.pageCount {
+        for pageIndex in pagesToExport {
             guard let page = sourceDoc.page(at: pageIndex) else { continue }
             var mediaBox = page.bounds(for: .mediaBox)
             context.beginPage(mediaBox: &mediaBox)
             page.draw(with: .mediaBox, to: context)
-            renderGrid(for: note, in: mediaBox, into: context)
+            if options.includeGrid {
+                renderGrid(for: note, in: mediaBox, into: context)
+            }
             renderShapes(for: note, pageIndex: pageIndex, into: context)
             renderStrokes(for: note, pageIndex: pageIndex, into: context)
             context.endPage()

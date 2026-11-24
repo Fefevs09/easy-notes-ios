@@ -289,4 +289,194 @@ class PDFExportTests: XCTestCase {
         // When / Then
         XCTAssertThrowsError(try viewModel.exportPDF(for: note, to: destination))
     }
+
+    func testExportPDFIncludeGridOptionTrueVsFalse() throws {
+        viewModel.addNote(title: "Grid Compare Note", content: "")
+        guard let note = viewModel.notes.first else {
+            XCTFail("Failed to add note")
+            return
+        }
+        viewModel.setGridStyle(.grid, for: note)
+        viewModel.setGridColor(.black, for: note)
+
+        let destWithGrid = makeTempPDFURL()
+        let destWithoutGrid = makeTempPDFURL()
+
+        try viewModel.exportPDF(for: note, to: destWithGrid, options: PDFExportOptions(includeGrid: true))
+        try viewModel.exportPDF(for: note, to: destWithoutGrid, options: PDFExportOptions(includeGrid: false))
+
+        let dataWithGrid = try Data(contentsOf: destWithGrid)
+        let dataWithoutGrid = try Data(contentsOf: destWithoutGrid)
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: destWithGrid.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: destWithoutGrid.path))
+        XCTAssertGreaterThan(dataWithGrid.count, dataWithoutGrid.count, "PDF with grid should have additional drawing operators")
+    }
+
+    func testExportPDFWithPageRangePreservesPageCountAndStrokes() throws {
+        // Given a 2-page note with a red stroke on page 1 (0-based)
+        viewModel.addNote(title: "Two Pages Range", content: "")
+        guard let note = viewModel.notes.first else {
+            XCTFail("Failed to add note")
+            return
+        }
+        viewModel.selectedNote = note
+        viewModel.addBlankPage()
+        XCTAssertEqual(note.pageCount, 2)
+
+        let strokePoint = CGPoint(x: 300, y: 400)
+        addStroke(
+            to: note,
+            points: "260.0,400.0;340.0,400.0",
+            color: "#FF0000",
+            width: 24,
+            pageIndex: 1
+        )
+
+        // Export only page 1 (second page, 0-based index 1...1)
+        let destination = makeTempPDFURL()
+        let options = PDFExportOptions(includeGrid: false, pageRange: 1...1)
+        try viewModel.exportPDF(for: note, to: destination, options: options)
+
+        // Then: exported document has pageCount == 1, and contains the red stroke
+        guard let exportedDoc = PDFDocument(url: destination) else {
+            XCTFail("Failed to load exported PDF")
+            return
+        }
+        XCTAssertEqual(exportedDoc.pageCount, 1)
+
+        guard let exportedPage = exportedDoc.page(at: 0),
+              let sampled = averageColor(on: exportedPage, at: strokePoint) else {
+            XCTFail("Failed to sample exported page color")
+            return
+        }
+        XCTAssertGreaterThan(sampled.r, 0.6, "Expected red stroke on exported page")
+        XCTAssertLessThan(sampled.g, 0.4)
+        XCTAssertLessThan(sampled.b, 0.4)
+
+        // And exporting page 0 (index 0...0) should have pageCount == 1 without stroke
+        let destPage0 = makeTempPDFURL()
+        try viewModel.exportPDF(for: note, to: destPage0, options: PDFExportOptions(includeGrid: false, pageRange: 0...0))
+        guard let docPage0 = PDFDocument(url: destPage0),
+              let page0 = docPage0.page(at: 0),
+              let sampled0 = averageColor(on: page0, at: strokePoint) else {
+            XCTFail("Failed to sample page 0")
+            return
+        }
+        XCTAssertEqual(docPage0.pageCount, 1)
+        XCTAssertGreaterThan(sampled0.r, 0.9, "Page 0 should remain white")
+        XCTAssertGreaterThan(sampled0.g, 0.9)
+        XCTAssertGreaterThan(sampled0.b, 0.9)
+    }
+
+    func testExportPDFInvalidPageRangeThrowsAndDoesNotCreateFile() {
+        viewModel.addNote(title: "Invalid Range Note", content: "")
+        guard let note = viewModel.notes.first else {
+            XCTFail("Failed to add note")
+            return
+        }
+        let destination = makeTempPDFURL()
+
+        // Page count is 1 (index 0), so range 0...1 is out of bounds
+        let invalidOptions = PDFExportOptions(includeGrid: true, pageRange: 0...1)
+        XCTAssertThrowsError(try viewModel.exportPDF(for: note, to: destination, options: invalidOptions)) { error in
+            XCTAssertEqual(error as? PDFExportError, .invalidPageRange)
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: destination.path), "Invalid page range must not write file")
+
+        // Inverted range or negative indices
+        let negativeDestination = makeTempPDFURL()
+        let negativeOptions = PDFExportOptions(includeGrid: true, pageRange: -1...0)
+        XCTAssertThrowsError(try viewModel.exportPDF(for: note, to: negativeDestination, options: negativeOptions)) { error in
+            XCTAssertEqual(error as? PDFExportError, .invalidPageRange)
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: negativeDestination.path))
+    }
+
+    func testFlushTitleEditsEnsuresUpdatedSuggestedPDFName() {
+        viewModel.addNote(title: "Initial Title", content: "Content")
+        guard let note = viewModel.notes.first else {
+            XCTFail("Failed to add note")
+            return
+        }
+        XCTAssertEqual(note.suggestedPDFName, "Initial Title.pdf")
+
+        viewModel.editTitle(of: note, to: "Updated Title By User")
+        XCTAssertTrue(viewModel.hasPendingTitle)
+
+        viewModel.flushTitleEdits()
+
+        XCTAssertFalse(viewModel.hasPendingTitle)
+        XCTAssertEqual(note.title, "Updated Title By User")
+        XCTAssertEqual(note.suggestedPDFName, "Updated Title By User.pdf")
+    }
+
+    func testParsePageRangeValidAndInvalid() throws {
+        // Valid
+        XCTAssertEqual(try PDFExportOptions.parsePageRange("1-3", pageCount: 5), 0...2)
+        XCTAssertEqual(try PDFExportOptions.parsePageRange("2", pageCount: 4), 1...1)
+        XCTAssertEqual(try PDFExportOptions.parsePageRange("  1 - 2  ", pageCount: 2), 0...1)
+
+        // Invalid
+        XCTAssertThrowsError(try PDFExportOptions.parsePageRange("0-2", pageCount: 3)) {
+            XCTAssertEqual($0 as? PDFExportError, .invalidPageRange)
+        }
+        XCTAssertThrowsError(try PDFExportOptions.parsePageRange("1-5", pageCount: 3)) {
+            XCTAssertEqual($0 as? PDFExportError, .invalidPageRange)
+        }
+        XCTAssertThrowsError(try PDFExportOptions.parsePageRange("3-1", pageCount: 3)) {
+            XCTAssertEqual($0 as? PDFExportError, .invalidPageRange)
+        }
+        XCTAssertThrowsError(try PDFExportOptions.parsePageRange("abc", pageCount: 3)) {
+            XCTAssertEqual($0 as? PDFExportError, .invalidPageRange)
+        }
+        XCTAssertThrowsError(try PDFExportOptions.parsePageRange("", pageCount: 3)) {
+            XCTAssertEqual($0 as? PDFExportError, .invalidPageRange)
+        }
+    }
+
+    @MainActor
+    func testPDFExportAccessoryViewOptionsResolution() throws {
+        let accessory = PDFExportAccessoryView(pageCount: 3, initialIncludeGrid: true)
+        let defaultOptions = try accessory.resolveOptions()
+        XCTAssertTrue(defaultOptions.includeGrid)
+        XCTAssertNil(defaultOptions.pageRange) // "Todas" is selected
+
+        // Toggle checkbox
+        accessory.gridCheckbox.state = .off
+        let noGridOptions = try accessory.resolveOptions()
+        XCTAssertFalse(noGridOptions.includeGrid)
+
+        // Select interval
+        accessory.rangeRadio.state = .on
+        accessory.allPagesRadio.state = .off
+        accessory.updateControlsState()
+        accessory.fromField.stringValue = "2"
+        accessory.toField.stringValue = "3"
+
+        let rangeOptions = try accessory.resolveOptions()
+        XCTAssertEqual(rangeOptions.pageRange, 1...2)
+
+        // Invalid range in fields
+        accessory.fromField.stringValue = "3"
+        accessory.toField.stringValue = "1"
+        XCTAssertThrowsError(try accessory.resolveOptions()) {
+            XCTAssertEqual($0 as? PDFExportError, .invalidPageRange)
+        }
+    }
+
+    func testPDFExportErrorLocalizedDescriptions() {
+        XCTAssertEqual(
+            PDFExportError.documentUnavailable.localizedDescription,
+            "O documento PDF da nota não está disponível para exportação."
+        )
+        XCTAssertEqual(
+            PDFExportError.contextCreationFailed.localizedDescription,
+            "Não foi possível criar o contexto de renderização do PDF."
+        )
+        XCTAssertEqual(
+            PDFExportError.invalidPageRange.localizedDescription,
+            "O intervalo de páginas especificado é inválido."
+        )
+    }
 }
