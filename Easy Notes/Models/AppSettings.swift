@@ -1,7 +1,17 @@
 import AppKit
 import Combine
 import Foundation
+import Observation
 import SwiftUI
+
+@Observable
+final class ThemeAppearanceState {
+    static let shared = ThemeAppearanceState()
+
+    var themePreset: AppThemePreset = .editorial
+    var surfaceOpacity: Double = 1.0
+    var interfaceContrast: Double = 1.0
+}
 
 public enum AppAppearanceMode: String, CaseIterable, Identifiable, Codable {
     case system
@@ -209,7 +219,7 @@ public enum AppSettingsError: LocalizedError, Equatable {
 }
 
 public final class AppSettingsStore: ObservableObject {
-    public static let shared = AppSettingsStore()
+    public static let shared = AppSettingsStore(defaults: .standard, syncsGlobalTheme: true)
 
     public enum Keys {
         public static let appearanceMode = "easyNotes.settings.appearanceMode"
@@ -226,7 +236,9 @@ public final class AppSettingsStore: ObservableObject {
         public static let defaultPaperStyle = "easyNotes.settings.defaultPaperStyle"
         public static let defaultNoteOrientation = "easyNotes.settings.defaultNoteOrientation"
         public static let customStoragePath = "easyNotes.settings.customStoragePath"
+        public static let storageDirectoryBookmark = "easyNotes.settings.storageDirectoryBookmark"
         public static let defaultExportDirectoryPath = "easyNotes.settings.defaultExportDirectoryPath"
+        public static let defaultExportDirectoryBookmark = "easyNotes.settings.defaultExportDirectoryBookmark"
         public static let includePaperGridInExport = "easyNotes.settings.includePaperGridInExport"
     }
 
@@ -241,6 +253,7 @@ public final class AppSettingsStore: ObservableObject {
     public static let defaultEraserWidthValue: Double = 18.0
 
     private let defaults: UserDefaults
+    private let syncsGlobalTheme: Bool
     private var isReloading = false
 
     @Published public var appearanceMode: AppAppearanceMode {
@@ -248,7 +261,12 @@ public final class AppSettingsStore: ObservableObject {
     }
 
     @Published public var themePreset: AppThemePreset {
-        didSet { persist(themePreset.rawValue, forKey: Keys.themePreset) }
+        didSet {
+            persist(themePreset.rawValue, forKey: Keys.themePreset)
+            if syncsGlobalTheme {
+                ThemeAppearanceState.shared.themePreset = themePreset
+            }
+        }
     }
 
     @Published public var interfaceContrast: Double {
@@ -259,6 +277,9 @@ public final class AppSettingsStore: ObservableObject {
                 return
             }
             persist(clamped, forKey: Keys.interfaceContrast)
+            if syncsGlobalTheme {
+                ThemeAppearanceState.shared.interfaceContrast = clamped
+            }
         }
     }
 
@@ -270,6 +291,9 @@ public final class AppSettingsStore: ObservableObject {
                 return
             }
             persist(clamped, forKey: Keys.surfaceOpacity)
+            if syncsGlobalTheme {
+                ThemeAppearanceState.shared.surfaceOpacity = clamped
+            }
         }
     }
 
@@ -347,16 +371,25 @@ public final class AppSettingsStore: ObservableObject {
         didSet { persistOptionalString(customStoragePath, forKey: Keys.customStoragePath) }
     }
 
+    @Published public var storageDirectoryBookmark: Data? {
+        didSet { persistOptionalData(storageDirectoryBookmark, forKey: Keys.storageDirectoryBookmark) }
+    }
+
     @Published public var defaultExportDirectoryPath: String? {
         didSet { persistOptionalString(defaultExportDirectoryPath, forKey: Keys.defaultExportDirectoryPath) }
+    }
+
+    @Published public var defaultExportDirectoryBookmark: Data? {
+        didSet { persistOptionalData(defaultExportDirectoryBookmark, forKey: Keys.defaultExportDirectoryBookmark) }
     }
 
     @Published public var includePaperGridInExport: Bool {
         didSet { persist(includePaperGridInExport, forKey: Keys.includePaperGridInExport) }
     }
 
-    public init(defaults: UserDefaults = .standard) {
+    public init(defaults: UserDefaults = .standard, syncsGlobalTheme: Bool = false) {
         self.defaults = defaults
+        self.syncsGlobalTheme = syncsGlobalTheme
         self.isReloading = true
 
         self.appearanceMode = defaults.string(forKey: Keys.appearanceMode)
@@ -403,10 +436,18 @@ public final class AppSettingsStore: ObservableObject {
             .flatMap(NoteOrientation.init(rawValue:)) ?? .portrait
 
         self.customStoragePath = Self.normalizedOptionalPath(defaults.string(forKey: Keys.customStoragePath))
+        self.storageDirectoryBookmark = defaults.data(forKey: Keys.storageDirectoryBookmark)
         self.defaultExportDirectoryPath = Self.normalizedOptionalPath(defaults.string(forKey: Keys.defaultExportDirectoryPath))
+        self.defaultExportDirectoryBookmark = defaults.data(forKey: Keys.defaultExportDirectoryBookmark)
         self.includePaperGridInExport = defaults.object(forKey: Keys.includePaperGridInExport) as? Bool ?? true
 
         self.isReloading = false
+
+        if syncsGlobalTheme {
+            ThemeAppearanceState.shared.themePreset = self.themePreset
+            ThemeAppearanceState.shared.interfaceContrast = self.interfaceContrast
+            ThemeAppearanceState.shared.surfaceOpacity = self.surfaceOpacity
+        }
     }
 
     // MARK: - Computed Helpers
@@ -449,6 +490,13 @@ public final class AppSettingsStore: ObservableObject {
     }
 
     public func setCustomStorageURL(_ url: URL) throws {
+        let didStartAccessing = url.startAccessingSecurityScopedResource()
+        defer {
+            if didStartAccessing {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+
         let standardized = url.standardizedFileURL
         var isDirectory: ObjCBool = false
         let exists = FileManager.default.fileExists(atPath: standardized.path, isDirectory: &isDirectory)
@@ -459,20 +507,36 @@ public final class AppSettingsStore: ObservableObject {
             throw AppSettingsError.unwritableStorageDirectory(standardized.path)
         }
         customStoragePath = standardized.path
+        storageDirectoryBookmark = Self.makeSecurityScopedBookmark(for: standardized)
     }
 
     public func resetStorageLocation() {
         customStoragePath = nil
+        storageDirectoryBookmark = nil
     }
 
     public func setDefaultExportDirectory(_ url: URL?) {
         guard let url else {
             defaultExportDirectoryPath = nil
+            defaultExportDirectoryBookmark = nil
             return
         }
-        defaultExportDirectoryPath = url.standardizedFileURL.path
+        let standardized = url.standardizedFileURL
+        defaultExportDirectoryPath = standardized.path
+        defaultExportDirectoryBookmark = Self.makeSecurityScopedBookmark(for: standardized)
     }
 
+    public static func makeSecurityScopedBookmark(for url: URL) -> Data? {
+        try? url.bookmarkData(
+            options: .withSecurityScope,
+            includingResourceValuesForKeys: nil,
+            relativeTo: nil
+        )
+    }
+
+    /// Resets UI, drawing, paper, and export preferences while deliberately preserving
+    /// any configured custom storage location (`customStoragePath` / `storageDirectoryBookmark`)
+    /// so user notes are never silently detached.
     public func resetAll() {
         appearanceMode = .system
         themePreset = .editorial
@@ -487,8 +551,8 @@ public final class AppSettingsStore: ObservableObject {
         penPresets = PenPresetColor.defaults
         defaultPaperStyle = .none
         defaultNoteOrientation = .portrait
-        customStoragePath = nil
         defaultExportDirectoryPath = nil
+        defaultExportDirectoryBookmark = nil
         includePaperGridInExport = true
     }
 
@@ -503,6 +567,15 @@ public final class AppSettingsStore: ObservableObject {
         guard !isReloading else { return }
         if let normalized = Self.normalizedOptionalPath(value) {
             defaults.set(normalized, forKey: key)
+        } else {
+            defaults.removeObject(forKey: key)
+        }
+    }
+
+    private func persistOptionalData(_ value: Data?, forKey key: String) {
+        guard !isReloading else { return }
+        if let value {
+            defaults.set(value, forKey: key)
         } else {
             defaults.removeObject(forKey: key)
         }

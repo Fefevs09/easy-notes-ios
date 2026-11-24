@@ -25,7 +25,8 @@ struct Easy_NotesApp: App {
                 .environment(\.managedObjectContext, coreDataStack.viewContext)
                 .environmentObject(viewModel)
                 .environmentObject(settings)
-                .accentColor(PixelTheme.accent)
+                .tint(PixelTheme.accent)
+                .contrast(settings.interfaceContrast)
                 .preferredColorScheme(settings.appearanceMode.preferredColorScheme)
         }
         .defaultSize(width: 1180, height: 760)
@@ -36,6 +37,8 @@ struct Easy_NotesApp: App {
             AppSettingsView()
                 .environmentObject(settings)
                 .environmentObject(viewModel)
+                .tint(PixelTheme.accent)
+                .contrast(settings.interfaceContrast)
         }
     }
 }

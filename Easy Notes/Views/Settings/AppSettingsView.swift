@@ -86,6 +86,9 @@ struct AppSettingsView: View {
     @State private var hoveredTab: SettingsTab? = nil
     @State private var isConfirmingResetAll = false
     @State private var storageFeedback: StorageFeedback? = nil
+    @State private var cachedActiveNotesCount: Int = 0
+    @State private var cachedTrashedNotesCount: Int = 0
+    @State private var keyMonitor: Any? = nil
     @FocusState private var isSearchFocused: Bool
 
     private struct StorageFeedback: Equatable {
@@ -125,17 +128,28 @@ struct AppSettingsView: View {
         .background(PixelTheme.background)
         .preferredColorScheme(settings.appearanceMode.preferredColorScheme)
         .tint(PixelTheme.accent)
+        .onAppear {
+            refreshStorageStats()
+            installKeyMonitor()
+        }
+        .onDisappear {
+            removeKeyMonitor()
+        }
+        .onChange(of: selectedTab) { _, newTab in
+            if newTab == .storage {
+                refreshStorageStats()
+            }
+        }
+        .onChange(of: viewModel.notes.count) { _, _ in
+            refreshStorageStats()
+        }
+        .onChange(of: viewModel.notebooks.count) { _, _ in
+            refreshStorageStats()
+        }
         .onChange(of: searchQuery) { _, _ in
             if !filteredTabs.contains(selectedTab), let first = filteredTabs.first {
                 selectedTab = first
             }
-        }
-        .onKeyPress(characters: CharacterSet(charactersIn: "/")) { _ in
-            guard !isSearchFocused, !isEditingTextInKeyWindow() else {
-                return .ignored
-            }
-            isSearchFocused = true
-            return .handled
         }
         .alert("Restaurar todas as configurações?", isPresented: $isConfirmingResetAll) {
             Button("Restaurar padrões", role: .destructive) {
@@ -144,7 +158,7 @@ struct AppSettingsView: View {
             }
             Button("Cancelar", role: .cancel) {}
         } message: {
-            Text("Todas as preferências de aparência, canetas, papel, armazenamento e exportação voltarão aos valores originais. Suas notas não serão apagadas.")
+            Text("Todas as preferências de aparência, canetas, papel e exportação voltarão aos valores originais. O local de armazenamento personalizado e suas notas serão preservados.")
         }
     }
 
@@ -207,6 +221,10 @@ struct AppSettingsView: View {
                 .font(PixelTheme.uiFont(size: 12.5))
                 .foregroundStyle(PixelTheme.ink)
                 .focused($isSearchFocused)
+                .onExitCommand {
+                    searchQuery = ""
+                    isSearchFocused = false
+                }
                 .accessibilityLabel("Buscar configurações")
 
             if !searchQuery.isEmpty {
@@ -261,6 +279,7 @@ struct AppSettingsView: View {
                     .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
                     .foregroundStyle(isSelected ? PixelTheme.accent : PixelTheme.inkSecondary)
                     .frame(width: 18)
+                    .accessibilityHidden(true)
 
                 Text(tab.title)
                     .font(PixelTheme.uiFont(size: 13, weight: isSelected ? .semibold : .medium))
@@ -627,6 +646,7 @@ struct AppSettingsView: View {
                             supportsOpacity: false
                         )
                         .labelsHidden()
+                        .accessibilityValue(settings.defaultPenColorHex)
                     }
                     .padding(14)
 
@@ -655,6 +675,7 @@ struct AppSettingsView: View {
                             supportsOpacity: false
                         )
                         .labelsHidden()
+                        .accessibilityValue(settings.defaultHighlighterColorHex)
                     }
                     .padding(14)
 
@@ -716,6 +737,7 @@ struct AppSettingsView: View {
                                 supportsOpacity: false
                             )
                             .labelsHidden()
+                            .accessibilityValue(preset.hex)
                         }
                         .padding(.horizontal, 14)
                         .padding(.vertical, 10)
@@ -830,17 +852,28 @@ struct AppSettingsView: View {
 
     private var storageSection: some View {
         let activeStoreURL = CoreDataStack.shared.currentStoreURL
-        let activeDirectoryPath = activeStoreURL?.deletingLastPathComponent().path
-            ?? CoreDataStack.defaultStoreDirectoryURL.path
-        let totalNotes = viewModel.countAllNotes() + viewModel.countTrashedNotes()
+        let activeDirectoryPath = activeStoreURL?.deletingLastPathComponent().standardizedFileURL.path
+            ?? CoreDataStack.defaultStoreDirectoryURL.standardizedFileURL.path
+        let defaultDirectoryPath = CoreDataStack.defaultStoreDirectoryURL.standardizedFileURL.path
+        let totalNotes = cachedActiveNotesCount + cachedTrashedNotesCount
         let totalNotebooks = viewModel.notebooks.count
+        let loadWarning = CoreDataStack.shared.storageLoadWarning
+        let pendingTargetPath: String? = {
+            if let custom = settings.customStoragePath, custom != activeDirectoryPath {
+                return custom
+            }
+            if settings.customStoragePath == nil && activeDirectoryPath != defaultDirectoryPath {
+                return defaultDirectoryPath
+            }
+            return nil
+        }()
 
         return VStack(alignment: .leading, spacing: 22) {
             settingsSection(title: "Resumo da biblioteca", subtitle: "Dados armazenados localmente via Core Data (SQLite).") {
                 HStack(spacing: 14) {
                     statBadge(title: "Notas", value: "\(totalNotes)", icon: "doc.text")
                     statBadge(title: "Cadernos", value: "\(totalNotebooks)", icon: "folder")
-                    statBadge(title: "Na lixeira", value: "\(viewModel.countTrashedNotes())", icon: "trash")
+                    statBadge(title: "Na lixeira", value: "\(cachedTrashedNotesCount)", icon: "trash")
                 }
                 .padding(14)
             }
@@ -868,14 +901,45 @@ struct AppSettingsView: View {
                             }
                     }
 
-                    if let pendingCustomPath = settings.customStoragePath,
-                       pendingCustomPath != activeDirectoryPath {
+                    if let loadWarning {
                         HStack(alignment: .top, spacing: 8) {
-                            Image(systemName: "info.circle.fill")
-                                .foregroundStyle(PixelTheme.accent)
-                            Text("Nova pasta configurada (\(pendingCustomPath)). Reabra o Easy Notes para passar a usar este local.")
-                                .font(PixelTheme.uiFont(size: 12))
-                                .foregroundStyle(PixelTheme.inkSecondary)
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(PixelTheme.danger)
+                                .accessibilityHidden(true)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("Fallback para o banco padrão")
+                                    .font(PixelTheme.uiFont(size: 12, weight: .semibold))
+                                    .foregroundStyle(PixelTheme.danger)
+                                Text(loadWarning)
+                                    .font(PixelTheme.uiFont(size: 12))
+                                    .foregroundStyle(PixelTheme.ink)
+                            }
+                        }
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(PixelTheme.dangerSoft)
+                        )
+                    } else if let pendingTargetPath {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(alignment: .top, spacing: 8) {
+                                Image(systemName: "arrow.triangle.2.circlepath.circle.fill")
+                                    .foregroundStyle(PixelTheme.accent)
+                                    .accessibilityHidden(true)
+                                Text("Alteração pendente para \(pendingTargetPath). Reabra o Easy Notes para ativar este local; novas edições feitas antes de reabrir permanecerão no banco atual.")
+                                    .font(PixelTheme.uiFont(size: 12))
+                                    .foregroundStyle(PixelTheme.inkSecondary)
+                            }
+
+                            HStack {
+                                Spacer()
+                                Button("Encerrar e Reabrir") {
+                                    relaunchApplication()
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .controlSize(.small)
+                            }
                         }
                         .padding(10)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -889,6 +953,7 @@ struct AppSettingsView: View {
                         HStack(alignment: .top, spacing: 8) {
                             Image(systemName: feedback.isError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
                                 .foregroundStyle(feedback.isError ? PixelTheme.danger : PixelTheme.success)
+                                .accessibilityHidden(true)
                             Text(feedback.message)
                                 .font(PixelTheme.uiFont(size: 12))
                                 .foregroundStyle(feedback.isError ? PixelTheme.danger : PixelTheme.ink)
@@ -926,7 +991,7 @@ struct AppSettingsView: View {
                             )
                         }
                         .buttonStyle(.bordered)
-                        .disabled(settings.customStoragePath == nil)
+                        .disabled(settings.customStoragePath == nil && settings.storageDirectoryBookmark == nil)
                     }
                 }
                 .padding(14)
@@ -941,6 +1006,7 @@ struct AppSettingsView: View {
                 .foregroundStyle(PixelTheme.accent)
                 .frame(width: 28, height: 28)
                 .background(PixelTheme.accentSoft, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(value)
@@ -964,6 +1030,7 @@ struct AppSettingsView: View {
             RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .strokeBorder(PixelTheme.border, lineWidth: 1)
         }
+        .accessibilityElement(children: .combine)
     }
 
     // MARK: - 6. Exportação
@@ -1163,6 +1230,66 @@ struct AppSettingsView: View {
 
     // MARK: - Actions
 
+    private func refreshStorageStats() {
+        cachedActiveNotesCount = viewModel.countAllNotes()
+        cachedTrashedNotesCount = viewModel.countTrashedNotes()
+    }
+
+    private func installKeyMonitor() {
+        guard keyMonitor == nil else { return }
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            // Focus search on bare '/' when not already editing any text field.
+            if event.charactersIgnoringModifiers == "/",
+               flags.subtracting(.shift).isEmpty,
+               !isSearchFocused,
+               !isEditingTextInKeyWindow() {
+                isSearchFocused = true
+                return nil
+            }
+            // Clear and blur search on Escape (keyCode 53).
+            if event.keyCode == 53, (isSearchFocused || !searchQuery.isEmpty) {
+                searchQuery = ""
+                isSearchFocused = false
+                return nil
+            }
+            return event
+        }
+    }
+
+    private func removeKeyMonitor() {
+        if let monitor = keyMonitor {
+            NSEvent.removeMonitor(monitor)
+            keyMonitor = nil
+        }
+    }
+
+    private func relaunchApplication() {
+        if CoreDataStack.shared.viewContext.hasChanges {
+            try? CoreDataStack.shared.viewContext.save()
+        }
+        let appURL = Bundle.main.bundleURL
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.createsNewApplicationInstance = true
+        NSWorkspace.shared.openApplication(at: appURL, configuration: configuration) { _, _ in
+            DispatchQueue.main.async {
+                NSApp.terminate(nil)
+            }
+        }
+    }
+
+    private func presentOpenPanel(_ panel: NSOpenPanel, completion: @escaping (URL) -> Void) {
+        let handler: (NSApplication.ModalResponse) -> Void = { response in
+            guard response == .OK, let directoryURL = panel.url else { return }
+            completion(directoryURL)
+        }
+        if let window = NSApp.keyWindow ?? NSApp.mainWindow {
+            panel.beginSheetModal(for: window, completionHandler: handler)
+        } else {
+            panel.begin(completionHandler: handler)
+        }
+    }
+
     private func revealStoreInFinder() {
         if let storeURL = CoreDataStack.shared.currentStoreURL,
            FileManager.default.fileExists(atPath: storeURL.path) {
@@ -1182,7 +1309,7 @@ struct AppSettingsView: View {
         panel.canCreateDirectories = true
         panel.allowsMultipleSelection = false
 
-        if panel.runModal() == .OK, let directoryURL = panel.url {
+        presentOpenPanel(panel) { directoryURL in
             do {
                 _ = try CoreDataStack.shared.migrateStoreCopy(to: directoryURL)
                 try settings.setCustomStorageURL(directoryURL)
@@ -1208,7 +1335,7 @@ struct AppSettingsView: View {
         panel.canCreateDirectories = true
         panel.allowsMultipleSelection = false
 
-        if panel.runModal() == .OK, let directoryURL = panel.url {
+        presentOpenPanel(panel) { directoryURL in
             settings.setDefaultExportDirectory(directoryURL)
         }
     }

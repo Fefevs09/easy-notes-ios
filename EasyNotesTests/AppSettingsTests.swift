@@ -149,9 +149,28 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertEqual(reloaded.penPresets, PenPresetColor.defaults)
         XCTAssertEqual(reloaded.defaultPaperStyle, .none)
         XCTAssertEqual(reloaded.defaultNoteOrientation, .portrait)
-        XCTAssertNil(reloaded.customStoragePath)
+        // Custom storage path MUST be preserved by resetAll() so user notes are never silently detached.
+        XCTAssertEqual(reloaded.customStoragePath, tempDir.standardizedFileURL.path)
         XCTAssertNil(reloaded.defaultExportDirectoryPath)
         XCTAssertTrue(reloaded.includePaperGridInExport)
+    }
+
+    func testInvalidHexRejectedForDefaultPenAndHighlighterColors() {
+        let store = AppSettingsStore(defaults: isolatedDefaults)
+        store.defaultPenColorHex = "#112233"
+        store.defaultHighlighterColorHex = "#AABBCC"
+
+        store.defaultPenColorHex = "not-a-color"
+        store.defaultPenColorHex = "#123"
+        store.defaultHighlighterColorHex = "zzzzzz"
+        store.defaultHighlighterColorHex = ""
+
+        XCTAssertEqual(store.defaultPenColorHex, "#112233")
+        XCTAssertEqual(store.defaultHighlighterColorHex, "#AABBCC")
+
+        let reloaded = AppSettingsStore(defaults: isolatedDefaults)
+        XCTAssertEqual(reloaded.defaultPenColorHex, "#112233")
+        XCTAssertEqual(reloaded.defaultHighlighterColorHex, "#AABBCC")
     }
 
     func testCanvasAndNewNoteDraftUseConfiguredDefaults() {
@@ -209,7 +228,16 @@ final class AppSettingsTests: XCTestCase {
         note.gridSpacing = 24
         note.gridOriginX = 0
         note.gridOriginY = 0
+        // Large binary payload (>128KB) to exercise Core Data's allowsExternalBinaryDataStorage (_EXTERNAL_DATA).
+        let coverPayload = Data((0..<(256 * 1024)).map { UInt8($0 % 251) })
+        note.coverMediaData = coverPayload
+        note.coverMediaType = "image/png"
         stack.saveContext()
+
+        // Migrating into the active directory itself must be rejected.
+        XCTAssertThrowsError(try stack.migrateStoreCopy(to: sourceDir)) { error in
+            XCTAssertEqual(error as? CoreDataStorageError, .destinationMatchesSource(sourceStoreURL.standardizedFileURL))
+        }
 
         let copiedURL = try stack.migrateStoreCopy(to: destDir)
         XCTAssertEqual(copiedURL.standardizedFileURL, destDir.appendingPathComponent(CoreDataStack.storeFileName).standardizedFileURL)
@@ -222,18 +250,45 @@ final class AppSettingsTests: XCTestCase {
             XCTAssertEqual(error as? CoreDataStorageError, .destinationAlreadyExists(copiedURL))
         }
 
-        // Persist custom storage path and verify a new CoreDataStack loads from it.
+        // Persist custom storage path and verify a new CoreDataStack loads from it,
+        // including the externally stored coverMediaData payload.
         try store.setCustomStorageURL(destDir)
         XCTAssertEqual(store.customStoragePath, destDir.standardizedFileURL.path)
 
         let reopenedStack = CoreDataStack(defaults: isolatedDefaults)
+        XCTAssertNil(reopenedStack.storageLoadWarning)
+        XCTAssertFalse(reopenedStack.didFallbackToDefaultStore)
         XCTAssertEqual(reopenedStack.currentStoreURL?.standardizedFileURL, copiedURL.standardizedFileURL)
         let request = NSFetchRequest<Note>(entityName: "Note")
         let fetched = try reopenedStack.viewContext.fetch(request)
-        XCTAssertTrue(fetched.contains(where: { $0.title == "Nota Preservada" }))
+        let migratedNote = try XCTUnwrap(fetched.first(where: { $0.title == "Nota Preservada" }))
+        XCTAssertEqual(migratedNote.coverMediaData, coverPayload)
+        XCTAssertEqual(migratedNote.coverMediaType, "image/png")
+
+        // Verify original source store still has the note and external data intact.
+        let originalStack = CoreDataStack(storeURL: sourceStoreURL, defaults: isolatedDefaults)
+        let originalFetched = try originalStack.viewContext.fetch(NSFetchRequest<Note>(entityName: "Note"))
+        let originalNote = try XCTUnwrap(originalFetched.first(where: { $0.title == "Nota Preservada" }))
+        XCTAssertEqual(originalNote.coverMediaData, coverPayload)
 
         store.resetStorageLocation()
         XCTAssertNil(store.customStoragePath)
+        XCTAssertNil(store.storageDirectoryBookmark)
+    }
+
+    func testCoreDataStackFallsBackSafelyWhenCustomDirectoryIsMissing() {
+        let missingPath = FileManager.default.temporaryDirectory
+            .appendingPathComponent("easy-notes-missing-dir-\(UUID().uuidString)", isDirectory: true)
+            .path
+        isolatedDefaults.set(missingPath, forKey: AppSettingsStore.Keys.customStoragePath)
+
+        let stack = CoreDataStack(defaults: isolatedDefaults)
+        XCTAssertTrue(stack.didFallbackToDefaultStore)
+        XCTAssertNotNil(stack.storageLoadWarning)
+        XCTAssertEqual(
+            stack.currentStoreURL?.deletingLastPathComponent().standardizedFileURL,
+            CoreDataStack.defaultStoreDirectoryURL.standardizedFileURL
+        )
     }
 
     func testSettingsSearchFilteringMatchesKeywordsAndTitles() {
