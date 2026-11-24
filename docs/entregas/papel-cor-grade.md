@@ -15,3 +15,5 @@ A base já inclui `Notebook.colorIndex` e os relacionamentos de pastas. Ao integ
 O scheme **Easy Notes** foi compilado e testado no macOS com Xcode em `/Applications/Xcode.app/Contents/Developer`, DerivedData temporário e contextos em memória ou SQLite temporário. Os testes cobrem migração de modelos anteriores à capa, ao emoji, à hierarquia de cadernos e à cor da grade. Verificam também a cor após reabertura, a igualdade dos pixels nas linhas centrais e adjacentes e a presença da tinta escolhida nas duas miniaturas e no PDF exportado.
 
 A navegação interativa por teclado e a leitura dos controles pelo VoiceOver ficaram sem validação manual.
+
+A revisão independente identificou recorte nas miniaturas de PDFs com rotação de 90° ou 270°. A miniatura usa o tamanho e a imagem que o PDFKit calcula para a página, aplicando a transformação da página também à grade e às anotações. O teste de regressão verifica proporção e tinta nos quatro cantos para ambas as rotações. A suíte atualizada passou com 57 testes no Xcode.

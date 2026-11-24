@@ -56,6 +56,31 @@ final class PageThumbnailTests: XCTestCase {
         }
     }
 
+    func testRotatedPageThumbnailKeepsWholePage() throws {
+        let (model, _) = TestSupport.makeInMemoryViewModel()
+        model.addNote(title: "Rotação")
+        let note = try XCTUnwrap(model.selectedNote)
+        let paper = NSImage(size: CGSize(width: 300, height: 500), flipped: false) { rect in
+            NSColor.black.setFill()
+            rect.fill()
+            return true
+        }
+        let page = try XCTUnwrap(PDFPage(image: paper))
+        for angle in [90, 270] {
+            page.rotation = angle
+            let thumbnail = PageThumbnail.renderThumbnail(for: page, note: note, pageIndex: 0)
+            XCTAssertEqual(thumbnail.size.width, 224, accuracy: 1)
+            XCTAssertEqual(thumbnail.size.height, 134, accuracy: 1)
+            let pixels = NSBitmapImageRep(cgImage: try XCTUnwrap(thumbnail.cgImage(forProposedRect: nil, context: nil, hints: nil)))
+            for x in [2, pixels.pixelsWide - 3] {
+                for y in [2, pixels.pixelsHigh - 3] {
+                    let color = try XCTUnwrap(pixels.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB))
+                    XCTAssertLessThan(color.redComponent, 0.15)
+                }
+            }
+        }
+    }
+
     func testLandscapeThumbnailIncludesStrokeNearRightEdge() throws {
         let (viewModel, context) = TestSupport.makeInMemoryViewModel()
         viewModel.addNote(title: "Horizontal", orientation: .landscape)

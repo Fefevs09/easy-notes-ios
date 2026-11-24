@@ -132,9 +132,9 @@ struct PageThumbnail: View {
     static func renderThumbnail(for page: PDFPage, note: Note, pageIndex: Int) -> NSImage {
         let mediaBox = page.bounds(for: .mediaBox)
         guard mediaBox.width > 0, mediaBox.height > 0 else { return NSImage() }
-        let scale = min(224 / mediaBox.width, 296 / mediaBox.height)
-        let size = CGSize(width: max(1, (mediaBox.width * scale).rounded()),
-                          height: max(1, (mediaBox.height * scale).rounded()))
+        let paper = page.thumbnail(of: CGSize(width: 224, height: 296), for: .mediaBox)
+        let size = paper.size
+        guard size.width >= 1, size.height >= 1 else { return paper }
 
         let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(size.width), pixelsHigh: Int(size.height),
                                    bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
@@ -146,10 +146,12 @@ struct PageThumbnail: View {
         context.setFillColor(NSColor.white.cgColor)
         context.fill(CGRect(origin: .zero, size: size))
         context.saveGState()
-        context.translateBy(x: -mediaBox.minX * size.width / mediaBox.width,
-                            y: -mediaBox.minY * size.height / mediaBox.height)
-        context.scaleBy(x: size.width / mediaBox.width, y: size.height / mediaBox.height)
-        page.draw(with: .mediaBox, to: context)
+        paper.draw(in: CGRect(origin: .zero, size: size))
+        let transform = page.transform(for: .mediaBox)
+        let displayBounds = mediaBox.applying(transform)
+        context.scaleBy(x: size.width / displayBounds.width, y: size.height / displayBounds.height)
+        context.translateBy(x: -displayBounds.minX, y: -displayBounds.minY)
+        context.concatenate(transform)
         renderGrid(for: note, in: mediaBox, into: context)
         renderShapes(for: note, pageIndex: pageIndex, into: context)
         renderStrokes(for: note, pageIndex: pageIndex, into: context)
