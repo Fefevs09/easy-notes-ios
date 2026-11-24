@@ -11,12 +11,6 @@ struct ContentView: View {
     @State private var canvasViewportWidth: CGFloat = 0
     @State private var isSidebarOpen = true
     @State private var selectedPageIndex = 0
-    @State private var sidebarTab: SidebarTab = .note
-
-    private enum SidebarTab: String, CaseIterable {
-        case note = "Nota"
-        case pages = "Páginas"
-    }
 
     var body: some View {
         Group {
@@ -34,10 +28,10 @@ struct ContentView: View {
         }
         .preferredColorScheme(.light)
         .onAppear {
-            handleNoteChange(to: viewModel.selectedNote)
+            resetEditorPosition()
         }
-        .onChange(of: viewModel.selectedNote) { _, newNote in
-            handleNoteChange(to: newNote)
+        .onChange(of: viewModel.selectedNote) {
+            resetEditorPosition()
         }
         .onChange(of: viewModel.selectedNote?.pageCount) { _, pageCount in
             selectedPageIndex = min(max(0, selectedPageIndex), max(1, Int(pageCount ?? 1)) - 1)
@@ -171,43 +165,11 @@ struct ContentView: View {
     }
 
     private func editorSidebar(for note: Note) -> some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 2) {
-                ForEach(SidebarTab.allCases, id: \.self) { tab in
-                    let isSelected = sidebarTab == tab
-
-                    Button {
-                        sidebarTab = tab
-                    } label: {
-                        Text(tab.rawValue)
-                            .font(PixelTheme.uiFont(size: 12, weight: .semibold))
-                            .foregroundStyle(isSelected ? PixelTheme.accent : PixelTheme.inkSecondary)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 26)
-                            .contentShape(Rectangle())
-                            .studioActiveTool(isSelected)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityAddTraits(isSelected ? .isSelected : [])
-                }
-            }
-            .padding(3)
-            .background(PixelTheme.sidebar, in: RoundedRectangle(cornerRadius: 10))
-            .padding(.horizontal, 14)
-            .padding(.top, 12)
-            .padding(.bottom, 4)
-
-            switch sidebarTab {
-            case .note:
-                NotePaperInspector(note: note, title: note.title)
-            case .pages:
-                ThumbnailBarView(
-                    noteVM: viewModel,
-                    pdfDocument: viewModel.getPDFDocument(for: note),
-                    selectedPageIndex: $selectedPageIndex
-                )
-            }
-        }
+        ThumbnailBarView(
+            noteVM: viewModel,
+            pdfDocument: viewModel.getPDFDocument(for: note),
+            selectedPageIndex: $selectedPageIndex
+        )
         .frame(width: 220)
         .frame(maxHeight: .infinity)
         .background(PixelTheme.surface)
@@ -237,10 +199,9 @@ struct ContentView: View {
         }
     }
 
-    private func handleNoteChange(to newNote: Note?) {
+    private func resetEditorPosition() {
         zoomScale = 1.0
         selectedPageIndex = 0
-        sidebarTab = (newNote?.pageCount ?? 0) > 1 ? .pages : .note
     }
 
     private func fitCanvasToWidth(for note: Note) {
