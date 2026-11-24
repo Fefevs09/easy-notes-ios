@@ -898,6 +898,57 @@ final class NoteContextMenuTests: XCTestCase {
 }
 
 extension NoteContextMenuTests {
+    func testFreeColorSurvivesMigrationAndReopen() throws {
+        let url = try makeTempDirectory().appendingPathComponent("notebooks.sqlite")
+        let id = UUID()
+        try autoreleasepool {
+            let oldModel = CoreDataStack.makeModel()
+            for entity in oldModel.entities {
+                entity.managedObjectClassName = "NSManagedObject"
+            }
+            let entity = try XCTUnwrap(oldModel.entitiesByName["Notebook"])
+            entity.properties.removeAll { $0.name == "colorHex" }
+            let coordinator = NSPersistentStoreCoordinator(managedObjectModel: oldModel)
+            let store = try coordinator.addPersistentStore(type: .sqlite, at: url)
+            let context = NSManagedObjectContext(concurrencyType: .mainQueueConcurrencyType)
+            context.persistentStoreCoordinator = coordinator
+            let folder = NSEntityDescription.insertNewObject(forEntityName: "Notebook", into: context)
+            folder.setValue(id, forKey: "id")
+            folder.setValue("Projetos", forKey: "name")
+            folder.setValue(2, forKey: "colorIndex")
+            try context.save()
+            context.reset()
+            try coordinator.remove(store)
+        }
+
+        let container = try TestSupport.makeSQLiteContainer(at: url)
+        let vm = NoteViewModel(context: container.viewContext, coverCache: NoteCoverCache())
+        let folder = try XCTUnwrap(vm.notebooks.first)
+        let legacy = PixelTheme.notebookSwatches[2]
+        XCTAssertEqual(folder.id, id)
+        XCTAssertEqual(PixelTheme.notebookColor(for: folder), legacy.dot)
+        vm.renameNotebook(folder, to: "Arquivo", color: legacy.dot)
+        XCTAssertNil(folder.colorHex)
+        XCTAssertEqual(PixelTheme.notebookBannerTint(for: folder), legacy.banner)
+        let chosen = try XCTUnwrap(PenColorComponents.fromHex("#128FA9")).opaqueColor
+        vm.renameNotebook(folder, to: "Arquivo", color: chosen)
+        try closeSQLiteContainer(container)
+
+        let reopened = try TestSupport.makeSQLiteContainer(at: url)
+        let persisted = try XCTUnwrap(reopened.viewContext.fetch(NSFetchRequest<Notebook>(entityName: "Notebook")).first)
+        XCTAssertEqual(persisted.id, id)
+        XCTAssertEqual(persisted.colorHex, "#128FA9")
+        XCTAssertEqual(PixelTheme.notebookColor(for: persisted), chosen)
+        let note = Note(context: reopened.viewContext)
+        note.id = UUID()
+        note.title = "Teste"
+        let menu = NoteActionMenuModel(note: note, notebooks: [persisted], filter: .all)
+        XCTAssertEqual(menu.moveDestinations.last?.color, chosen)
+        persisted.colorHex = "inválida"
+        XCTAssertEqual(PixelTheme.notebookColor(for: persisted), legacy.dot)
+        try closeSQLiteContainer(reopened)
+    }
+
     func testMigratingLegacySQLiteAndEditingHierarchy() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)

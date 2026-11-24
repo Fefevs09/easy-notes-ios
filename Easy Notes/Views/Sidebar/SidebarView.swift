@@ -8,7 +8,7 @@ struct SidebarView: View {
 
     @State private var newParent: Notebook?
     @State private var collapsed: Set<UUID> = []
-    @State private var editColor = 0
+    @State private var editColor = Color.clear
     @State private var notebookToRename: Notebook? = nil
     private var visibleNotebooks: [Notebook] {
         func rows(_ siblings: [Notebook]) -> [Notebook] {
@@ -138,7 +138,7 @@ struct SidebarView: View {
                                     .contextMenu {
                                         Button("Editar caderno…") {
                                             notebookToRename = notebook
-                                            editColor = notebook.swatchIndex
+                                            editColor = PixelTheme.notebookColor(for: notebook)
                                         }
                                         Button("Nova subpasta…") {
                                             newParent = notebook
@@ -199,7 +199,7 @@ struct SidebarView: View {
         .sheet(item: $notebookToRename) { notebook in
             NamePromptView(title: "Editar caderno", fieldLabel: "Nome do caderno",
                            confirmationLabel: "Salvar", onConfirm: { name in
-                viewModel.renameNotebook(notebook, to: name, colorIndex: editColor)
+                viewModel.renameNotebook(notebook, to: name, color: editColor)
             }, initialName: notebook.name, notebookColor: $editColor)
         }
         .alert("Excluir Caderno", isPresented: $isConfirmingDeleteNotebook) {

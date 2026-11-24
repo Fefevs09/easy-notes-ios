@@ -72,11 +72,15 @@ enum PixelTheme {
     }
 
     static func notebookColor(for notebook: Notebook?) -> Color {
-        notebook.map { notebookSwatches[$0.swatchIndex].dot } ?? muted
+        notebook.map { $0.customColor?.opaqueColor ?? notebookSwatches[$0.swatchIndex].dot } ?? muted
     }
 
     static func notebookBannerTint(for notebook: Notebook?) -> Color {
-        notebook.map { notebookSwatches[$0.swatchIndex].banner } ?? Color(red: 0.929, green: 0.922, blue: 0.894)
+        if let color = notebook?.customColor {
+            // Blend with white to keep the card banner light and opaque.
+            return Color(.sRGB, red: 0.8 + 0.2 * color.red, green: 0.8 + 0.2 * color.green, blue: 0.8 + 0.2 * color.blue)
+        }
+        return notebook.map { notebookSwatches[$0.swatchIndex].banner } ?? Color(red: 0.929, green: 0.922, blue: 0.894)
     }
 
     private static func stableHash(_ text: String) -> Int {

@@ -261,10 +261,18 @@ public class NoteViewModel: ObservableObject {
         }
     }
 
-    public func renameNotebook(_ notebook: Notebook, to newName: String, colorIndex: Int? = nil) {
+    public func renameNotebook(_ notebook: Notebook, to newName: String, colorIndex: Int? = nil, color: Color? = nil) {
         let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         
+        if let color {
+            let hex = PenColorComponents.from(color).hex6
+            if hex != PenColorComponents.from(PixelTheme.notebookColor(for: notebook)).hex6 {
+                notebook.colorHex = hex
+            }
+        } else if colorIndex != nil {
+            notebook.colorHex = nil
+        }
         notebook.colorIndex = NSNumber(value: colorIndex ?? notebook.swatchIndex)
         notebook.name = trimmed
         save()
