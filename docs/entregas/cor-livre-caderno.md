@@ -8,6 +8,8 @@ A migração leve do SQLite mantém o índice de paleta anterior. Na ausência d
 
 ## Validação
 
-O teste `testFreeColorSurvivesMigrationAndReopen` cria um SQLite temporário com o esquema imediatamente anterior, confere a cor legada, renomeia o caderno, grava uma cor fora da paleta e abre outro contêiner para verificar a identidade e a cor. Também verifica o destino no menu e a recuperação de um hexadecimal inválido.
+O teste `testFreeColorSurvivesMigrationAndReopen` copia a base sintética fixa Notebook-5cd740d.sqlite para um diretório temporário. Essa base foi criada com o modelo do commit 5cd740d. O teste confere a cor legada, renomeia o caderno, grava uma cor fora da paleta e abre outro contêiner para verificar a identidade e a cor. Também verifica o destino no menu e a recuperação de um hexadecimal inválido.
 
 No Xcode 27.2 (27B52), o build Debug para macOS arm64 passou e os 54 testes passaram com zero falhas. A interação manual com o painel de cores e a execução conjunta com FIX-01 ficaram fora desta validação.
+
+A revisão independente do commit da implementação executou 54 testes e confirmou a abertura de bancos criados com os modelos de 5cd740d e 5598e7b. A fixture fixa incorpora a observação da revisão sobre cobertura histórica.
