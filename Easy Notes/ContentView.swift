@@ -27,7 +27,6 @@ struct ContentView: View {
                 }
             }
         }
-        .preferredColorScheme(.light)
         .onAppear {
             resetEditorPosition()
         }

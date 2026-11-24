@@ -5,6 +5,14 @@ struct NewNoteDraft {
     var paper: GridStyle = .none
     var orientation: NoteOrientation = .portrait
 
+    static func fromSettings(_ settings: AppSettingsStore = .shared) -> NewNoteDraft {
+        NewNoteDraft(
+            title: "",
+            paper: settings.defaultPaperStyle,
+            orientation: settings.defaultNoteOrientation
+        )
+    }
+
     func create(in model: NoteViewModel) {
         let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
         model.addNote(title: name.isEmpty ? "Nova Nota" : name, paper: paper, orientation: orientation)
@@ -14,7 +22,7 @@ struct NewNoteDraft {
 struct NewNoteSheet: View {
     @EnvironmentObject private var viewModel: NoteViewModel
     @Environment(\.dismiss) private var dismiss
-    @State private var draft = NewNoteDraft()
+    @State private var draft = NewNoteDraft.fromSettings()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {

@@ -11,6 +11,7 @@ import SwiftUI
 struct Easy_NotesApp: App {
     let coreDataStack = CoreDataStack.shared
     @StateObject private var viewModel: NoteViewModel
+    @StateObject private var settings = AppSettingsStore.shared
     
     init() {
         let context = CoreDataStack.shared.viewContext
@@ -23,11 +24,18 @@ struct Easy_NotesApp: App {
                 .frame(minWidth: 920, minHeight: 600)
                 .environment(\.managedObjectContext, coreDataStack.viewContext)
                 .environmentObject(viewModel)
+                .environmentObject(settings)
                 .accentColor(PixelTheme.accent)
-                .preferredColorScheme(.light)
+                .preferredColorScheme(settings.appearanceMode.preferredColorScheme)
         }
         .defaultSize(width: 1180, height: 760)
         .windowStyle(.hiddenTitleBar)
         .windowToolbarStyle(.unifiedCompact)
+
+        Settings {
+            AppSettingsView()
+                .environmentObject(settings)
+                .environmentObject(viewModel)
+        }
     }
 }

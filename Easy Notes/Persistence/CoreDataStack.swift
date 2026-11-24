@@ -1,12 +1,42 @@
 import CoreData
 
+public enum CoreDataStorageError: LocalizedError, Equatable {
+    case storeUnavailable
+    case invalidDestinationDirectory(String)
+    case destinationAlreadyExists(URL)
+    case verificationFailed(URL)
+
+    public var errorDescription: String? {
+        switch self {
+        case .storeUnavailable:
+            return "Não foi possível localizar o arquivo de banco de dados atual."
+        case .invalidDestinationDirectory(let path):
+            return "A pasta de destino não é um diretório acessível: \(path)"
+        case .destinationAlreadyExists(let url):
+            return "Já existe um banco de dados do Easy Notes na pasta selecionada (\(url.lastPathComponent)). Escolha uma pasta vazia para evitar sobrescrever dados."
+        case .verificationFailed(let url):
+            return "A verificação do arquivo copiado falhou em \(url.path). Os dados originais foram preservados."
+        }
+    }
+}
+
 public class CoreDataStack {
     public static let shared = CoreDataStack()
+    public static let storeFileName = "EasyNotesModel.sqlite"
     
     public let container: NSPersistentContainer
     
     public var viewContext: NSManagedObjectContext {
         return container.viewContext
+    }
+
+    public var currentStoreURL: URL? {
+        container.persistentStoreCoordinator.persistentStores.first?.url
+            ?? container.persistentStoreDescriptions.first?.url
+    }
+
+    public static var defaultStoreDirectoryURL: URL {
+        NSPersistentContainer.defaultDirectoryURL()
     }
     
     static func makeModel() -> NSManagedObjectModel {
@@ -346,18 +376,126 @@ public class CoreDataStack {
         return model
     }
 
-    private init() {
-        container = NSPersistentContainer(name: "EasyNotesModel", managedObjectModel: Self.makeModel())
-        if let description = container.persistentStoreDescriptions.first {
-            description.shouldMigrateStoreAutomatically = true
-            description.shouldInferMappingModelAutomatically = true
+    public init(storeURL: URL? = nil, defaults: UserDefaults = .standard) {
+        let model = Self.makeModel()
+        let persistentContainer = NSPersistentContainer(name: "EasyNotesModel", managedObjectModel: model)
+        let defaultURL = persistentContainer.persistentStoreDescriptions.first?.url
+            ?? Self.defaultStoreDirectoryURL.appendingPathComponent(Self.storeFileName)
+
+        let preferredURL = storeURL ?? Self.resolvedCustomStoreURL(from: defaults)
+        let targetURL = preferredURL ?? defaultURL
+
+        let description = Self.makeStoreDescription(url: targetURL)
+        persistentContainer.persistentStoreDescriptions = [description]
+
+        var initialError: NSError?
+        persistentContainer.loadPersistentStores { _, error in
+            initialError = error as NSError?
         }
-        container.loadPersistentStores { (storeDescription, error) in
-            if let error = error as NSError? {
+
+        if let error = initialError {
+            if preferredURL != nil && targetURL.standardizedFileURL != defaultURL.standardizedFileURL {
+                // Safe fallback to the default store location if a custom directory fails to load.
+                let fallbackDescription = Self.makeStoreDescription(url: defaultURL)
+                persistentContainer.persistentStoreDescriptions = [fallbackDescription]
+                persistentContainer.loadPersistentStores { _, fallbackError in
+                    if let fallbackError = fallbackError as NSError? {
+                        fatalError("Unresolved error \(fallbackError), \(fallbackError.userInfo)")
+                    }
+                }
+            } else {
                 fatalError("Unresolved error \(error), \(error.userInfo)")
             }
         }
-        container.viewContext.automaticallyMergesChangesFromParent = true
+
+        persistentContainer.viewContext.automaticallyMergesChangesFromParent = true
+        self.container = persistentContainer
+    }
+
+    private static func makeStoreDescription(url: URL) -> NSPersistentStoreDescription {
+        let description = NSPersistentStoreDescription(url: url)
+        description.type = NSSQLiteStoreType
+        description.shouldMigrateStoreAutomatically = true
+        description.shouldInferMappingModelAutomatically = true
+        return description
+    }
+
+    private static func resolvedCustomStoreURL(from defaults: UserDefaults) -> URL? {
+        guard let rawPath = defaults.string(forKey: AppSettingsStore.Keys.customStoragePath)?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !rawPath.isEmpty else {
+            return nil
+        }
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: rawPath, isDirectory: &isDirectory),
+              isDirectory.boolValue else {
+            return nil
+        }
+        return URL(fileURLWithPath: rawPath, isDirectory: true)
+            .appendingPathComponent(storeFileName)
+    }
+
+    /// Saves pending changes and safely copies the active SQLite database (plus WAL/SHM sidecars
+    /// if present) into `directoryURL/EasyNotesModel.sqlite` without ever deleting the original files.
+    public func migrateStoreCopy(to directoryURL: URL) throws -> URL {
+        saveContext()
+
+        guard let sourceURL = currentStoreURL else {
+            throw CoreDataStorageError.storeUnavailable
+        }
+
+        let fileManager = FileManager.default
+        let standardizedDirectory = directoryURL.standardizedFileURL
+        var isDirectory: ObjCBool = false
+        guard fileManager.fileExists(atPath: standardizedDirectory.path, isDirectory: &isDirectory),
+              isDirectory.boolValue,
+              fileManager.isWritableFile(atPath: standardizedDirectory.path) else {
+            throw CoreDataStorageError.invalidDestinationDirectory(standardizedDirectory.path)
+        }
+
+        let destinationURL = standardizedDirectory.appendingPathComponent(Self.storeFileName)
+        if sourceURL.standardizedFileURL == destinationURL.standardizedFileURL {
+            return destinationURL
+        }
+
+        if fileManager.fileExists(atPath: destinationURL.path) {
+            throw CoreDataStorageError.destinationAlreadyExists(destinationURL)
+        }
+
+        guard fileManager.fileExists(atPath: sourceURL.path) else {
+            throw CoreDataStorageError.storeUnavailable
+        }
+
+        var copiedURLs: [URL] = []
+        do {
+            try fileManager.copyItem(at: sourceURL, to: destinationURL)
+            copiedURLs.append(destinationURL)
+
+            for suffix in ["-wal", "-shm"] {
+                let sidecarSource = URL(fileURLWithPath: sourceURL.path + suffix)
+                let sidecarDestination = URL(fileURLWithPath: destinationURL.path + suffix)
+                if fileManager.fileExists(atPath: sidecarSource.path) {
+                    if fileManager.fileExists(atPath: sidecarDestination.path) {
+                        throw CoreDataStorageError.destinationAlreadyExists(sidecarDestination)
+                    }
+                    try fileManager.copyItem(at: sidecarSource, to: sidecarDestination)
+                    copiedURLs.append(sidecarDestination)
+                }
+            }
+
+            let attributes = try fileManager.attributesOfItem(atPath: destinationURL.path)
+            let fileSize = (attributes[.size] as? NSNumber)?.int64Value ?? 0
+            guard fileSize > 0 else {
+                throw CoreDataStorageError.verificationFailed(destinationURL)
+            }
+            return destinationURL
+        } catch {
+            // Roll back only newly created files in the destination; never touch source files.
+            for copied in copiedURLs {
+                try? fileManager.removeItem(at: copied)
+            }
+            throw error
+        }
     }
     
     public func saveContext() {
