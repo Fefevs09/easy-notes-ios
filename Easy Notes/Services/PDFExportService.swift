@@ -129,7 +129,7 @@ public final class PDFExportAccessoryView: NSView {
         self.toField.alignment = .center
         self.toField.setAccessibilityLabel("Página final")
 
-        super.init(frame: NSRect(x: 0, y: 0, width: 360, height: pageCount > 1 ? 84 : 40))
+        super.init(frame: NSRect(x: 0, y: 0, width: 480, height: pageCount > 1 ? 84 : 40))
 
         setupUI()
     }
@@ -266,8 +266,9 @@ public final class PDFExportService {
         savePanel.accessoryView = accessory
 
         let completionHandler: (NSApplication.ModalResponse) -> Void = { [weak viewModel] response in
+            var exportedURL: URL?
             defer {
-                onCompletion?(response == .OK ? savePanel.url : nil)
+                onCompletion?(exportedURL)
             }
             guard response == .OK, let url = savePanel.url, let viewModel = viewModel else {
                 return
@@ -276,6 +277,7 @@ public final class PDFExportService {
             do {
                 let resolvedOptions = try accessory.resolveOptions(defaultDirectoryURL: options.defaultDirectoryURL)
                 try viewModel.exportPDF(for: note, to: url, options: resolvedOptions)
+                exportedURL = url
             } catch {
                 if let onError = onError {
                     onError(error)
@@ -289,7 +291,7 @@ public final class PDFExportService {
             }
         }
 
-        let targetWindow = hostWindow ?? NSApp.keyWindow ?? NSApp.mainWindow
+        let targetWindow = hostWindow ?? NSApp.mainWindow ?? NSApp.keyWindow
         if let window = targetWindow {
             savePanel.beginSheetModal(for: window, completionHandler: completionHandler)
         } else {

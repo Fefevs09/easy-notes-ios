@@ -485,12 +485,8 @@ public class NoteViewModel: ObservableObject {
 
         let pagesToExport: [Int]
         if let range = options.pageRange {
-            guard range.lowerBound >= 0,
-                  range.upperBound < sourceDoc.pageCount,
-                  range.lowerBound <= range.upperBound else {
-                throw PDFExportError.invalidPageRange
-            }
-            pagesToExport = Array(range)
+            let validatedRange = try PDFExportOptions.validate(range: range, pageCount: sourceDoc.pageCount)
+            pagesToExport = Array(validatedRange)
         } else {
             pagesToExport = Array(0..<sourceDoc.pageCount)
         }
