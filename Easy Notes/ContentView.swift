@@ -158,7 +158,8 @@ struct ContentView: View {
             }
             .buttonStyle(.plain)
             .fixedSize()
-            .help("Exportar nota como PDF")
+            .help("Exportar como PDF… (⇧⌘E)")
+            .keyboardShortcut("e", modifiers: [.command, .shift])
         }
         .font(PixelTheme.uiFont(size: 12))
         .padding(.leading, 76)
@@ -185,24 +186,7 @@ struct ContentView: View {
     }
 
     private func exportPDF(for note: Note) {
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [.pdf]
-        panel.canCreateDirectories = true
-        panel.nameFieldStringValue = note.suggestedPDFName
-
-        panel.begin { response in
-            guard response == .OK, let url = panel.url else { return }
-
-            do {
-                try viewModel.exportPDF(for: note, to: url)
-            } catch {
-                let alert = NSAlert()
-                alert.messageText = "Falha ao exportar PDF"
-                alert.informativeText = error.localizedDescription
-                alert.alertStyle = .warning
-                alert.runModal()
-            }
-        }
+        PDFExportService.shared.exportPDF(for: note, viewModel: viewModel)
     }
 
     private func resetEditorPosition() {

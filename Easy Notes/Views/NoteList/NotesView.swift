@@ -766,26 +766,21 @@ struct NotesView: View {
         pendingPanelFocusRestoreNoteID = noteID
         closeMenu(restoreFocus: false)
 
-        let savePanel = NSSavePanel()
-        savePanel.allowedContentTypes = [.pdf]
-        savePanel.canCreateDirectories = true
-        savePanel.nameFieldStringValue = note.suggestedPDFName
-
-        presentPanel(savePanel) { response in
-            defer {
-                pendingPanelFocusRestoreNoteID = nil
-                restoreFocusToTrigger(for: noteID)
-            }
-            guard response == .OK, let url = savePanel.url else { return }
-            do {
-                try viewModel.exportPDF(for: note, to: url)
-            } catch {
+        PDFExportService.shared.exportPDF(
+            for: note,
+            viewModel: viewModel,
+            hostWindow: NSApp.keyWindow ?? NSApp.mainWindow,
+            onError: { error in
                 actionAlert = NoteActionAlert(
                     title: "Falha ao exportar PDF",
                     message: error.localizedDescription
                 )
+            },
+            onCompletion: { _ in
+                pendingPanelFocusRestoreNoteID = nil
+                restoreFocusToTrigger(for: noteID)
             }
-        }
+        )
     }
 }
 

@@ -479,25 +479,7 @@ struct EditorToolbarView: View {
 
     private func exportPDF() {
         guard let note = viewModel.selectedNote else { return }
-
-        let savePanel = NSSavePanel()
-        savePanel.allowedContentTypes = [.pdf]
-        savePanel.nameFieldStringValue = note.suggestedPDFName
-        savePanel.canCreateDirectories = true
-
-        savePanel.begin { response in
-            if response == .OK, let url = savePanel.url {
-                do {
-                    try viewModel.exportPDF(for: note, to: url)
-                } catch {
-                    let alert = NSAlert()
-                    alert.messageText = "Falha ao exportar PDF"
-                    alert.informativeText = "\(error)"
-                    alert.alertStyle = .warning
-                    alert.runModal()
-                }
-            }
-        }
+        PDFExportService.shared.exportPDF(for: note, viewModel: viewModel)
     }
 
     // MARK: - Stroke / Eraser Size Popover
