@@ -405,7 +405,6 @@ struct NoteActionMenuPopoverView: View {
         .padding(14)
         .frame(width: 304)
         .background(PixelTheme.paper)
-        .preferredColorScheme(.light)
         .focusable()
         .focused($focusedField, equals: .container)
         .focusEffectDisabled()

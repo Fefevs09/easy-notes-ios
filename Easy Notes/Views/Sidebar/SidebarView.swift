@@ -3,6 +3,8 @@ import UniformTypeIdentifiers
 
 struct SidebarView: View {
     @EnvironmentObject var viewModel: NoteViewModel
+    @ObservedObject private var settings = AppSettingsStore.shared
+    @Environment(\.openSettings) private var openSettings
 
     @State private var isCreatingNotebook = false
 
@@ -21,6 +23,7 @@ struct SidebarView: View {
     }
 
     @State private var isConfirmingDeleteNotebook = false
+    @State private var isConfirmingEmptyTrash = false
     @State private var notebookToDelete: Notebook? = nil
 
     @State private var hoveredItem: String? = nil
@@ -69,7 +72,11 @@ struct SidebarView: View {
                         )
                         .contextMenu {
                             Button("Esvaziar Lixeira", role: .destructive) {
-                                viewModel.emptyTrash()
+                                if settings.confirmBeforeEmptyingTrash {
+                                    isConfirmingEmptyTrash = true
+                                } else {
+                                    viewModel.emptyTrash()
+                                }
                             }
                             .disabled(viewModel.countTrashedNotes() == 0)
                         }
@@ -146,8 +153,12 @@ struct SidebarView: View {
                                         }
                                         Divider()
                                         Button("Excluir Caderno...", role: .destructive) {
-                                            notebookToDelete = notebook
-                                            isConfirmingDeleteNotebook = true
+                                            if settings.confirmBeforeDeletingNotebook {
+                                                notebookToDelete = notebook
+                                                isConfirmingDeleteNotebook = true
+                                            } else {
+                                                viewModel.deleteNotebook(notebook, keepNotes: true)
+                                            }
                                         }
                                     }
                                     .onDrop(of: [UTType.text], isTargeted: nil) { providers in
@@ -173,6 +184,25 @@ struct SidebarView: View {
             HStack {
                 EasyNotesBrandMark(compact: true)
                 Spacer()
+                Button {
+                    openSettings()
+                } label: {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 13.5, weight: .medium))
+                        .foregroundColor(hoveredItem == "app-settings" ? PixelTheme.accent : PixelTheme.muted)
+                        .frame(width: 26, height: 26)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(hoveredItem == "app-settings" ? PixelTheme.sidebarElevated : Color.clear)
+                        )
+                        .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .help("Configurações (⌘,)")
+                .accessibilityLabel("Configurações")
+                .onHover { hovering in
+                    hoveredItem = hovering ? "app-settings" : (hoveredItem == "app-settings" ? nil : hoveredItem)
+                }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
@@ -220,6 +250,14 @@ struct SidebarView: View {
             }
         } message: {
             Text("As subpastas sobem um nível. Excluir apenas o caderno mantém suas notas em Notas Soltas. Excluir também as notas as envia para a Lixeira.")
+        }
+        .alert("Esvaziar Lixeira", isPresented: $isConfirmingEmptyTrash) {
+            Button("Esvaziar Lixeira", role: .destructive) {
+                viewModel.emptyTrash()
+            }
+            Button("Cancelar", role: .cancel) {}
+        } message: {
+            Text("Todas as notas na Lixeira serão excluídas permanentemente. Esta ação não pode ser desfeita.")
         }
     }
 

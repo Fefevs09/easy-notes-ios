@@ -133,7 +133,20 @@ public class CanvasViewModel: ObservableObject {
         PenColorToolContext(tool: activeTool)
     }
 
-    public init() {
+    public init(settings: AppSettingsStore = .shared) {
+        let defaultPenWidth = CGFloat(settings.defaultPenWidth)
+        let defaultEraserWidth = CGFloat(settings.defaultEraserWidth)
+        let defaultPenColor = settings.defaultPenColor
+        let defaultHighlighterColor = settings.defaultHighlighterColor
+
+        toolWidths[.fountainPen] = defaultPenWidth
+        toolWidths[.eraser] = defaultEraserWidth
+        toolWidths[.shape] = defaultPenWidth
+
+        toolColors[.fountainPen] = defaultPenColor
+        toolColors[.highlighter] = defaultHighlighterColor
+        toolColors[.shape] = defaultPenColor
+
         applyToolDefaults()
     }
 

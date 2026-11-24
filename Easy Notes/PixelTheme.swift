@@ -4,40 +4,128 @@ import AppKit
 /// Editorial Paper Studio / Soft-Pixel design system for Easy Notes.
 /// Keeps the `PixelTheme` namespace for full compatibility with existing views.
 enum PixelTheme {
+    // MARK: - Dynamic Color Helper
+    private static func dynamicNSColor(light: NSColor, dark: NSColor) -> NSColor {
+        NSColor(name: nil) { appearance in
+            let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            return isDark ? dark : light
+        }
+    }
+
+    private static func dynamicColor(light: NSColor, dark: NSColor) -> Color {
+        Color(nsColor: dynamicNSColor(light: light, dark: dark))
+    }
+
+    private static func srgb(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat, _ a: CGFloat = 1.0) -> NSColor {
+        NSColor(srgbRed: r, green: g, blue: b, alpha: a)
+    }
+
     // MARK: - Core Surfaces
-    static let paper = Color.white
-    static let surface = Color(red: 0.980, green: 0.976, blue: 0.961)          // #FAF9F5
-    static let background = Color(red: 0.957, green: 0.953, blue: 0.933)       // #F4F3EE
-    static let canvas = Color(red: 0.945, green: 0.937, blue: 0.914)           // #F1EFE9
-    static let sidebar = Color(red: 0.949, green: 0.941, blue: 0.910)          // #F2F0E8
-    static let sidebarElevated = Color(red: 0.929, green: 0.918, blue: 0.882)  // #EDEAE1
+    static let paper = dynamicColor(
+        light: srgb(1.0, 1.0, 1.0),                                   // #FFFFFF
+        dark: srgb(0.145, 0.141, 0.161)                               // #252429
+    )
+    private static let surfaceBase = dynamicColor(
+        light: srgb(0.980, 0.976, 0.961),                             // #FAF9F5
+        dark: srgb(0.169, 0.165, 0.188)                               // #2B2A30
+    )
+    static var surface: Color {
+        surfaceBase.opacity(ThemeAppearanceState.shared.surfaceOpacity)
+    }
+    static let background = dynamicColor(
+        light: srgb(0.957, 0.953, 0.933),                             // #F4F3EE
+        dark: srgb(0.114, 0.110, 0.129)                               // #1D1C21
+    )
+    static let canvas = dynamicColor(
+        light: srgb(0.945, 0.937, 0.914),                             // #F1EFE9
+        dark: srgb(0.098, 0.094, 0.114)                               // #19181D
+    )
+    private static let sidebarBase = dynamicColor(
+        light: srgb(0.949, 0.941, 0.910),                             // #F2F0E8
+        dark: srgb(0.125, 0.122, 0.141)                               // #201F24
+    )
+    static var sidebar: Color {
+        sidebarBase.opacity(ThemeAppearanceState.shared.surfaceOpacity)
+    }
+    private static let sidebarElevatedBase = dynamicColor(
+        light: srgb(0.929, 0.918, 0.882),                             // #EDEAE1
+        dark: srgb(0.188, 0.184, 0.212)                               // #302F36
+    )
+    static var sidebarElevated: Color {
+        sidebarElevatedBase.opacity(ThemeAppearanceState.shared.surfaceOpacity)
+    }
 
     // MARK: - Borders & Dividers
-    static let border = Color(red: 0.902, green: 0.890, blue: 0.855)           // #E6E3DA
-    static let borderStrong = Color(red: 0.835, green: 0.820, blue: 0.776)     // #D5D1C6
+    static let border = dynamicColor(
+        light: srgb(0.902, 0.890, 0.855),                             // #E6E3DA
+        dark: srgb(0.243, 0.239, 0.275)                               // #3E3D46
+    )
+    static let borderStrong = dynamicColor(
+        light: srgb(0.835, 0.820, 0.776),                             // #D5D1C6
+        dark: srgb(0.325, 0.318, 0.365)                               // #53515D
+    )
 
     // MARK: - Text / Ink
-    static let ink = Color(red: 0.137, green: 0.133, blue: 0.165)              // #23222A
-    static let inkSecondary = Color(red: 0.353, green: 0.345, blue: 0.388)     // #5A5863
-    static let muted = Color(red: 0.549, green: 0.537, blue: 0.580)            // #8C8994
-    static let popoverMuted = Color(red: 0.424, green: 0.412, blue: 0.455)     // #6C6974
+    static let ink = dynamicColor(
+        light: srgb(0.137, 0.133, 0.165),                             // #23222A
+        dark: srgb(0.945, 0.941, 0.961)                               // #F1F0F5
+    )
+    static let inkSecondary = dynamicColor(
+        light: srgb(0.353, 0.345, 0.388),                             // #5A5863
+        dark: srgb(0.757, 0.749, 0.796)                               // #C1BFCB
+    )
+    static let muted = dynamicColor(
+        light: srgb(0.549, 0.537, 0.580),                             // #8C8994
+        dark: srgb(0.580, 0.573, 0.624)                               // #94929F
+    )
+    static let popoverMuted = dynamicColor(
+        light: srgb(0.424, 0.412, 0.455),                             // #6C6974
+        dark: srgb(0.678, 0.671, 0.722)                               // #ADABB8
+    )
 
-    // MARK: - Brand & Semantic Accents
-    static let accent = Color(red: 0.435, green: 0.322, blue: 0.878)           // #6F52E0
-    static let accentDeep = Color(red: 0.357, green: 0.247, blue: 0.820)       // #5B3FD1
-    static let accentSoft = Color(red: 0.925, green: 0.906, blue: 0.988)       // #ECE7FC
-    static let accentBorder = Color(red: 0.678, green: 0.600, blue: 0.945)     // #AD99F1
+    // MARK: - Brand & Semantic Accents (Dynamic with AppThemePreset via @Observable ThemeAppearanceState)
+    static var accent: Color {
+        let preset = ThemeAppearanceState.shared.themePreset
+        return dynamicColor(light: preset.lightAccentNSColor, dark: preset.darkAccentNSColor)
+    }
 
-    static let success = Color(red: 0.180, green: 0.490, blue: 0.357)          // #2E7D5B
-    static let successSoft = Color(red: 0.918, green: 0.961, blue: 0.937)      // #EAF5EF
-    static let danger = Color(red: 0.780, green: 0.275, blue: 0.255)           // #C74641
-    static let dangerSoft = Color(red: 0.980, green: 0.922, blue: 0.918)       // #FAEBEA
+    static var accentDeep: Color {
+        let preset = ThemeAppearanceState.shared.themePreset
+        return dynamicColor(light: preset.lightAccentDeepNSColor, dark: preset.darkAccentDeepNSColor)
+    }
+
+    static var accentSoft: Color {
+        let preset = ThemeAppearanceState.shared.themePreset
+        return dynamicColor(light: preset.lightAccentSoftNSColor, dark: preset.darkAccentSoftNSColor)
+    }
+
+    static var accentBorder: Color {
+        let preset = ThemeAppearanceState.shared.themePreset
+        return dynamicColor(light: preset.lightAccentBorderNSColor, dark: preset.darkAccentBorderNSColor)
+    }
+
+    static let success = dynamicColor(
+        light: srgb(0.180, 0.490, 0.357),                             // #2E7D5B
+        dark: srgb(0.373, 0.741, 0.573)                               // #5FBD92
+    )
+    static let successSoft = dynamicColor(
+        light: srgb(0.918, 0.961, 0.937),                             // #EAF5EF
+        dark: srgb(0.145, 0.243, 0.196)
+    )
+    static let danger = dynamicColor(
+        light: srgb(0.780, 0.275, 0.255),                             // #C74641
+        dark: srgb(0.937, 0.459, 0.439)                               // #EF7570
+    )
+    static let dangerSoft = dynamicColor(
+        light: srgb(0.980, 0.922, 0.918),                             // #FAEBEA
+        dark: srgb(0.302, 0.165, 0.165)
+    )
 
     static let highlight = Color(red: 0.949, green: 0.816, blue: 0.420)        // #F2D06B
 
     // MARK: - Studio Ink Preset Swatches (5-dot palette from mockups)
     static let inkCharcoal = Color(red: 0.169, green: 0.165, blue: 0.200)      // #2B2A33
-    static let inkViolet = accent                                              // #6F52E0
+    static let inkViolet = Color(red: 0.435, green: 0.322, blue: 0.878)        // #6F52E0
     static let inkSage = Color(red: 0.325, green: 0.490, blue: 0.400)          // #537D66
     static let inkOchre = Color(red: 0.898, green: 0.722, blue: 0.294)         // #E5B84B
     static let inkTerracotta = Color(red: 0.765, green: 0.518, blue: 0.404)    // #C38467
@@ -60,11 +148,26 @@ enum PixelTheme {
 
     // MARK: - Notebook Deterministic Colors & Card Banner Tints
     static let notebookSwatches: [(name: String, dot: Color, banner: Color)] = [
-        ("Lavanda", inkViolet, Color(red: 0.914, green: 0.890, blue: 0.980)),             // Lavender
-        ("Sálvia", inkSage, Color(red: 0.878, green: 0.918, blue: 0.859)),               // Sage
-        ("Terracota", inkTerracotta, Color(red: 0.945, green: 0.894, blue: 0.863)),         // Clay / Peach
-        ("Areia", inkOchre, Color(red: 0.941, green: 0.914, blue: 0.843)),              // Warm Sand
-        ("Ardósia", Color(red: 0.427, green: 0.498, blue: 0.600), Color(red: 0.894, green: 0.922, blue: 0.949)) // Slate Mist
+        ("Lavanda", inkViolet, dynamicColor(
+            light: srgb(0.914, 0.890, 0.980),
+            dark: srgb(0.215, 0.185, 0.320)
+        )),
+        ("Sálvia", inkSage, dynamicColor(
+            light: srgb(0.878, 0.918, 0.859),
+            dark: srgb(0.165, 0.235, 0.200)
+        )),
+        ("Terracota", inkTerracotta, dynamicColor(
+            light: srgb(0.945, 0.894, 0.863),
+            dark: srgb(0.285, 0.195, 0.165)
+        )),
+        ("Areia", inkOchre, dynamicColor(
+            light: srgb(0.941, 0.914, 0.843),
+            dark: srgb(0.275, 0.235, 0.155)
+        )),
+        ("Ardósia", Color(red: 0.427, green: 0.498, blue: 0.600), dynamicColor(
+            light: srgb(0.894, 0.922, 0.949),
+            dark: srgb(0.175, 0.210, 0.265)
+        ))
     ]
 
     static func defaultNotebookIndex(_ name: String) -> Int {
@@ -77,10 +180,19 @@ enum PixelTheme {
 
     static func notebookBannerTint(for notebook: Notebook?) -> Color {
         if let color = notebook?.customColor {
-            // Blend with white to keep the card banner light and opaque.
-            return Color(.sRGB, red: 0.8 + 0.2 * color.red, green: 0.8 + 0.2 * color.green, blue: 0.8 + 0.2 * color.blue)
+            // Blend with white in light mode and dark surface in dark mode to preserve contrast.
+            let light = srgb(0.8 + 0.2 * color.red, 0.8 + 0.2 * color.green, 0.8 + 0.2 * color.blue)
+            let dark = srgb(
+                0.145 * 0.75 + color.red * 0.25,
+                0.141 * 0.75 + color.green * 0.25,
+                0.161 * 0.75 + color.blue * 0.25
+            )
+            return dynamicColor(light: light, dark: dark)
         }
-        return notebook.map { notebookSwatches[$0.swatchIndex].banner } ?? Color(red: 0.929, green: 0.922, blue: 0.894)
+        return notebook.map { notebookSwatches[$0.swatchIndex].banner } ?? dynamicColor(
+            light: srgb(0.929, 0.922, 0.894),
+            dark: srgb(0.180, 0.176, 0.204)
+        )
     }
 
     private static func stableHash(_ text: String) -> Int {
@@ -107,7 +219,10 @@ enum PixelTheme {
     static let compactRadius: CGFloat = 6
 
     static var nsCanvasBackground: NSColor {
-        NSColor(calibratedRed: 0.945, green: 0.937, blue: 0.914, alpha: 1.0)
+        dynamicNSColor(
+            light: srgb(0.945, 0.937, 0.914),
+            dark: srgb(0.098, 0.094, 0.114)
+        )
     }
 }
 

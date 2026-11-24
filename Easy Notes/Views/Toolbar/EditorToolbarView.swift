@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 struct EditorToolbarView: View {
     @EnvironmentObject var viewModel: NoteViewModel
     @ObservedObject var canvasVM: CanvasViewModel
+    @ObservedObject private var settings = AppSettingsStore.shared
     @Binding var isSidebarOpen: Bool
     var onBackToLibrary: (() -> Void)? = nil
 
@@ -304,7 +305,7 @@ struct EditorToolbarView: View {
     private var colorOptions: some View {
         HStack(spacing: 6) {
             optionLabel("Cor")
-            ForEach(PixelTheme.presetSwatchDefinitions, id: \.name) { swatch in
+            ForEach(settings.penPresets) { swatch in
                 presetColorButton(swatch.color, name: swatch.name)
             }
 
