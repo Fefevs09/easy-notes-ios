@@ -3,6 +3,7 @@ import CoreData
 import Combine
 import SwiftUI
 import PDFKit
+import CoreText
 import UniformTypeIdentifiers
 
 public enum FilterType: Hashable {
@@ -30,6 +31,7 @@ public enum NoteOrientation: String, CaseIterable {
 enum PDFExportError: Error, Equatable {
     case documentUnavailable
     case contextCreationFailed
+    case textLayoutFailed
 }
 
 public enum SortOption: String, CaseIterable, Identifiable {
@@ -490,7 +492,10 @@ public class NoteViewModel: ObservableObject {
             throw PDFExportError.contextCreationFailed
         }
 
-        for pageIndex in 0..<sourceDoc.pageCount {
+        let hasText = !note.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let textOnly = hasText && note.pdfData == nil && (note.strokes?.count ?? 0) == 0
+            && (note.shapes?.count ?? 0) == 0 && note.gridStyle == GridStyle.none.rawValue
+        for pageIndex in 0..<(textOnly ? 0 : sourceDoc.pageCount) {
             guard let page = sourceDoc.page(at: pageIndex) else { continue }
             var mediaBox = page.bounds(for: .mediaBox)
             context.beginPage(mediaBox: &mediaBox)
@@ -499,6 +504,28 @@ public class NoteViewModel: ObservableObject {
             renderShapes(for: note, pageIndex: pageIndex, into: context)
             renderStrokes(for: note, pageIndex: pageIndex, into: context)
             context.endPage()
+        }
+        if hasText {
+            let text = NSAttributedString(string: note.content, attributes: [
+                .font: NSFont.systemFont(ofSize: 12),
+                .foregroundColor: NSColor.black
+            ])
+            let framesetter = CTFramesetterCreateWithAttributedString(text)
+            var offset = 0
+            var mediaBox = CGRect(origin: .zero, size: NoteOrientation.portrait.pageSize)
+            let textBounds = mediaBox.insetBy(dx: 48, dy: 48)
+            let path = CGPath(rect: textBounds, transform: nil)
+            while offset < text.length {
+                let frame = CTFramesetterCreateFrame(framesetter, CFRange(location: offset, length: 0), path, nil)
+                let length = CTFrameGetVisibleStringRange(frame).length
+                guard length > 0 else { throw PDFExportError.textLayoutFailed }
+                context.beginPage(mediaBox: &mediaBox)
+                context.setFillColor(NSColor.white.cgColor)
+                context.fill(mediaBox)
+                CTFrameDraw(frame, context)
+                context.endPage()
+                offset += length
+            }
         }
         context.closePDF()
 
