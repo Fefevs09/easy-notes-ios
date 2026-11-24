@@ -2,6 +2,7 @@ import XCTest
 import CoreData
 import PDFKit
 import AppKit
+import CoreText
 
 class PDFExportTests: XCTestCase {
     var inMemoryContext: NSManagedObjectContext!
@@ -288,5 +289,102 @@ class PDFExportTests: XCTestCase {
 
         // When / Then
         XCTAssertThrowsError(try viewModel.exportPDF(for: note, to: destination))
+    }
+
+    func testImportedTextAndPageAnnotationsExportWithoutMutatingNote() throws {
+        let data = NSMutableData()
+        let consumer = try XCTUnwrap(CGDataConsumer(data: data as CFMutableData))
+        var bounds = CGRect(x: 0, y: 0, width: 612, height: 792)
+        let context = try XCTUnwrap(CGContext(consumer: consumer, mediaBox: &bounds, nil))
+        for text in ["Imported first page", "Imported second page"] {
+            context.beginPage(mediaBox: &bounds)
+            context.setFillColor(NSColor.white.cgColor)
+            context.fill(bounds)
+            let line = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: [.font: NSFont.systemFont(ofSize: 18)]))
+            context.textPosition = CGPoint(x: 50, y: 700)
+            CTLineDraw(line, context)
+            context.endPage()
+        }
+        context.closePDF()
+        let sourceURL = makeTempPDFURL()
+        let destination = makeTempPDFURL()
+        defer {
+            try? FileManager.default.removeItem(at: sourceURL)
+            try? FileManager.default.removeItem(at: destination)
+        }
+        try (data as Data).write(to: sourceURL)
+        viewModel.importPDF(url: sourceURL)
+        let note = try XCTUnwrap(viewModel.notes.first)
+        addStroke(to: note, points: "260,400;340,400", color: "#FF0000", width: 24, pageIndex: 1)
+        let originalPDF = note.pdfData
+        let originalUpdatedAt = note.updatedAt
+        let originalContent = note.content
+        let originalChanges = note.changedValues()
+
+        try viewModel.exportPDF(for: note, to: destination)
+
+        let document = try XCTUnwrap(PDFDocument(url: destination))
+        XCTAssertEqual(document.pageCount, 2)
+        XCTAssertTrue(try XCTUnwrap(document.page(at: 0)?.string).contains("Imported first page"))
+        XCTAssertTrue(try XCTUnwrap(document.page(at: 1)?.string).contains("Imported second page"))
+        let first = try XCTUnwrap(averageColor(on: XCTUnwrap(document.page(at: 0)), at: CGPoint(x: 300, y: 400)))
+        let second = try XCTUnwrap(averageColor(on: XCTUnwrap(document.page(at: 1)), at: CGPoint(x: 300, y: 400)))
+        XCTAssertGreaterThan(first.g, 0.9)
+        XCTAssertLessThan(second.g, 0.4)
+        XCTAssertEqual(note.pdfData, originalPDF)
+        XCTAssertEqual(note.updatedAt, originalUpdatedAt)
+        XCTAssertEqual(note.content, originalContent)
+        XCTAssertEqual(note.changedValues() as NSDictionary, originalChanges as NSDictionary)
+    }
+
+    func testInvalidSourceDoesNotReplaceExistingDestination() throws {
+        viewModel.addNote(title: "Invalid", content: "")
+        let note = try XCTUnwrap(viewModel.notes.first)
+        note.pdfData = Data([0, 1, 2])
+        let destination = makeTempPDFURL()
+        defer { try? FileManager.default.removeItem(at: destination) }
+        let original = Data("existing file".utf8)
+        try original.write(to: destination)
+        XCTAssertThrowsError(try viewModel.exportPDF(for: note, to: destination))
+        XCTAssertEqual(try Data(contentsOf: destination), original)
+    }
+
+    func testLegacyContentPaginatesWithoutBlankPageOrMutation() throws {
+        let content = String(repeating: "Legacy visible text with enough words to fill the page.\n", count: 180) + "Final legacy marker"
+        viewModel.addNote(title: "Legacy", content: content)
+        let note = try XCTUnwrap(viewModel.notes.first)
+        note.pdfData = nil
+        let updatedAt = note.updatedAt
+        let destination = makeTempPDFURL()
+        defer { try? FileManager.default.removeItem(at: destination) }
+        try viewModel.exportPDF(for: note, to: destination)
+        let document = try XCTUnwrap(PDFDocument(url: destination))
+        XCTAssertGreaterThan(document.pageCount, 1)
+        XCTAssertTrue(try XCTUnwrap(document.page(at: 0)?.string).contains("Legacy visible text"))
+        XCTAssertTrue(try XCTUnwrap(document.page(at: document.pageCount - 1)?.string).contains("Final legacy marker"))
+        XCTAssertEqual(note.content, content)
+        XCTAssertNil(note.pdfData)
+        XCTAssertEqual(note.updatedAt, updatedAt)
+    }
+
+    func testMixedContentAppendsTextAfterOriginalAnnotatedPages() throws {
+        viewModel.addNote(title: "Mixed", content: "Additional legacy text")
+        let note = try XCTUnwrap(viewModel.notes.first)
+        viewModel.selectedNote = note
+        viewModel.addBlankPage()
+        addStroke(to: note, points: "260,400;340,400", color: "#FF0000", width: 24, pageIndex: 1)
+        let originalPDF = note.pdfData
+        let updatedAt = note.updatedAt
+        let destination = makeTempPDFURL()
+        defer { try? FileManager.default.removeItem(at: destination) }
+        try viewModel.exportPDF(for: note, to: destination)
+        let document = try XCTUnwrap(PDFDocument(url: destination))
+        XCTAssertEqual(document.pageCount, 3)
+        XCTAssertTrue(try XCTUnwrap(document.page(at: 2)?.string).contains("Additional legacy text"))
+        let sample = try XCTUnwrap(averageColor(on: XCTUnwrap(document.page(at: 1)), at: CGPoint(x: 300, y: 400)))
+        XCTAssertLessThan(sample.g, 0.4)
+        XCTAssertEqual(note.pdfData, originalPDF)
+        XCTAssertEqual(note.updatedAt, updatedAt)
+        XCTAssertEqual(note.content, "Additional legacy text")
     }
 }
