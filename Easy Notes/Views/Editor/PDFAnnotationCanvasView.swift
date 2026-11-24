@@ -680,12 +680,16 @@ class PageDrawingCanvas: NSView {
         return shapesSet.first { $0.id == id }
     }
 
+    override var acceptsFirstResponder: Bool { true }
+    override var canBecomeKeyView: Bool { false }
+
     override func mouseDown(with event: NSEvent) {
         guard let canvasVM = canvasVM, canvasVM.isDrawingMode else {
             super.mouseDown(with: event)
             return
         }
 
+        window?.makeFirstResponder(self)
         let point = self.convert(event.locationInWindow, from: nil)
 
         switch canvasVM.activeTool {
@@ -1069,10 +1073,21 @@ class AnnotatedPDFOverlayProvider: NSObject, PDFPageOverlayViewProvider {
     }
 }
 
+@MainActor
+final class CanvasFocusTarget {
+    weak var view: NSPDFAnnotationView?
+
+    func focus() {
+        guard let view else { return }
+        view.window?.makeFirstResponder(view)
+    }
+}
+
 struct PDFAnnotationCanvasView: NSViewRepresentable {
     @ObservedObject var canvasVM: CanvasViewModel
     @ObservedObject var noteVM: NoteViewModel
     let noteId: UUID
+    let focusTarget: CanvasFocusTarget
     @Binding var zoomScale: CGFloat
     @Binding var selectedPageIndex: Int
 
@@ -1090,6 +1105,7 @@ struct PDFAnnotationCanvasView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSPDFAnnotationView {
         let pdfView = NSPDFAnnotationView()
+        focusTarget.view = pdfView
         pdfView.displayMode = .singlePageContinuous
         // Zoom is driven purely by `zoomScale` (1.0 == 100%). autoScales is left
         // off so PDFKit never overwrites the user's zoom with a transient

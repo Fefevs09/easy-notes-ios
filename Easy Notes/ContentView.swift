@@ -7,6 +7,7 @@ struct ContentView: View {
     @EnvironmentObject var viewModel: NoteViewModel
     @StateObject private var canvasVM = CanvasViewModel()
 
+    @State private var canvasFocus = CanvasFocusTarget()
     @State private var zoomScale: CGFloat = 1.0
     @State private var canvasViewportWidth: CGFloat = 0
     @State private var isSidebarOpen = true
@@ -69,6 +70,7 @@ struct ContentView: View {
                         canvasVM: canvasVM,
                         noteVM: viewModel,
                         noteId: note.id,
+                        focusTarget: canvasFocus,
                         zoomScale: $zoomScale,
                         selectedPageIndex: $selectedPageIndex
                     )
@@ -127,6 +129,10 @@ struct ContentView: View {
                 .textFieldStyle(.plain)
                 .font(PixelTheme.uiFont(size: 13.5, weight: .semibold))
                 .foregroundStyle(PixelTheme.ink)
+                .onSubmit {
+                    viewModel.flushTitleEdits()
+                    canvasFocus.focus()
+                }
                 .accessibilityLabel("Título da nota")
 
             Spacer(minLength: 8)
