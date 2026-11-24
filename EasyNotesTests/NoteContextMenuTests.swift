@@ -968,3 +968,39 @@ extension NoteContextMenuTests {
         XCTAssertEqual(try context.count(for: NSFetchRequest<Note>(entityName: "Note")), 1)
     }
 }
+
+extension NoteContextMenuTests {
+    func testFreeColorSurvivesMigrationAndReopen() throws {
+        let url = try makeTempDirectory().appendingPathComponent("notebooks.sqlite")
+        let id = try XCTUnwrap(UUID(uuidString: "D47E0E73-5B87-4C0E-8D75-AB2B9968EE91"))
+        let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Notebook-5cd740d.sqlite")
+        try FileManager.default.copyItem(at: fixture, to: url)
+
+        let container = try TestSupport.makeSQLiteContainer(at: url)
+        let vm = NoteViewModel(context: container.viewContext, coverCache: NoteCoverCache())
+        let folder = try XCTUnwrap(vm.notebooks.first)
+        let legacy = PixelTheme.notebookSwatches[2]
+        XCTAssertEqual(folder.id, id)
+        XCTAssertEqual(PixelTheme.notebookColor(for: folder), legacy.dot)
+        vm.renameNotebook(folder, to: "Arquivo", color: legacy.dot)
+        XCTAssertNil(folder.colorHex)
+        XCTAssertEqual(PixelTheme.notebookBannerTint(for: folder), legacy.banner)
+        let chosen = try XCTUnwrap(PenColorComponents.fromHex("#128FA9")).opaqueColor
+        vm.renameNotebook(folder, to: "Arquivo", color: chosen)
+        try closeSQLiteContainer(container)
+
+        let reopened = try TestSupport.makeSQLiteContainer(at: url)
+        let persisted = try XCTUnwrap(reopened.viewContext.fetch(NSFetchRequest<Notebook>(entityName: "Notebook")).first)
+        XCTAssertEqual(persisted.id, id)
+        XCTAssertEqual(persisted.colorHex, "#128FA9")
+        XCTAssertEqual(PixelTheme.notebookColor(for: persisted), chosen)
+        let note = Note(context: reopened.viewContext)
+        note.id = UUID()
+        note.title = "Teste"
+        let menu = NoteActionMenuModel(note: note, notebooks: [persisted], filter: .all)
+        XCTAssertEqual(menu.moveDestinations.last?.color, chosen)
+        persisted.colorHex = "inválida"
+        XCTAssertEqual(PixelTheme.notebookColor(for: persisted), legacy.dot)
+        try closeSQLiteContainer(reopened)
+    }
+}

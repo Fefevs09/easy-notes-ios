@@ -313,6 +313,12 @@ public class CoreDataStack {
         color.attributeType = .integer16AttributeType
         color.isOptional = true
 
+        let colorHex = NSAttributeDescription()
+        colorHex.name = "colorHex"
+        colorHex.attributeType = .stringAttributeType
+        colorHex.isOptional = true
+        notebookEntity.properties.append(colorHex)
+
         let parent = NSRelationshipDescription()
         parent.name = "parent"
         parent.destinationEntity = notebookEntity

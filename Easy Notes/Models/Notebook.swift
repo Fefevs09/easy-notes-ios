@@ -11,6 +11,12 @@ public class Notebook: NSManagedObject, Identifiable {
     @NSManaged public var children: Set<Notebook>?
     @NSManaged public var colorIndex: NSNumber?
 
+    @NSManaged public var colorHex: String?
+
+    var customColor: PenColorComponents? {
+        colorHex.flatMap { PenColorComponents.fromHex($0) }
+    }
+
     var swatchIndex: Int {
         if let index = colorIndex?.intValue, PixelTheme.notebookSwatches.indices.contains(index) {
             return index

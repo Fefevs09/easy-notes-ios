@@ -7,7 +7,7 @@ struct NamePromptView: View {
     let onConfirm: (String) -> Void
 
     var initialName = ""
-    var notebookColor: Binding<Int>? = nil
+    var notebookColor: Binding<Color>? = nil
 
     @Environment(\.dismiss) private var dismiss
     @FocusState private var isNameFocused: Bool
@@ -45,14 +45,7 @@ struct NamePromptView: View {
                 .focused($isNameFocused)
 
             if let notebookColor {
-                Picker("Cor da pasta", selection: notebookColor) {
-                    ForEach(PixelTheme.notebookSwatches.indices, id: \.self) { index in
-                        HStack {
-                            Circle().fill(PixelTheme.notebookSwatches[index].dot).frame(width: 10, height: 10)
-                            Text(PixelTheme.notebookSwatches[index].name)
-                        }.tag(index)
-                    }
-                }
+                ColorPicker("Cor da pasta", selection: notebookColor, supportsOpacity: false)
             }
 
             HStack(spacing: 10) {

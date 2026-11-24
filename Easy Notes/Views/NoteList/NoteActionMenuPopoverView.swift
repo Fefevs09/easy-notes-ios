@@ -18,13 +18,17 @@ public enum NoteActionMenuActionKind: String, Equatable, Sendable {
 
 public struct NoteActionMenuDestination: Identifiable, Equatable, Sendable {
     public let id: String
+    public let color: Color
     public let swatchIndex: Int?
     public let notebookID: UUID?
     public let title: String
     public let isCurrent: Bool
     public let isDisabled: Bool
 
-    public init(id: String, notebookID: UUID?, title: String, isCurrent: Bool, isDisabled: Bool, swatchIndex: Int? = nil) {
+    public init(id: String, notebookID: UUID?, title: String, isCurrent: Bool, isDisabled: Bool, swatchIndex: Int? = nil, color: Color? = nil) {
+        self.color = color ?? swatchIndex.flatMap { index in
+            PixelTheme.notebookSwatches.indices.contains(index) ? PixelTheme.notebookSwatches[index].dot : nil
+        } ?? PixelTheme.muted
         self.swatchIndex = swatchIndex
         self.id = id
         self.notebookID = notebookID
@@ -121,7 +125,8 @@ public struct NoteActionMenuModel: Equatable {
                         title: uniqueTitles[notebook.id] ?? notebook.path,
                         isCurrent: isCurrentNotebook,
                         isDisabled: isCurrentNotebook,
-                        swatchIndex: notebook.swatchIndex
+                        swatchIndex: notebook.swatchIndex,
+                        color: PixelTheme.notebookColor(for: notebook)
                     )
                 )
             }
@@ -1013,7 +1018,7 @@ private struct MoveDestinationRowButton: View {
                         .frame(width: 12)
                 } else {
                     Circle()
-                        .fill(destination.swatchIndex.map { PixelTheme.notebookSwatches[$0].dot } ?? PixelTheme.muted)
+                        .fill(destination.color)
                         .frame(width: 8, height: 8)
                         .frame(width: 12)
                 }
