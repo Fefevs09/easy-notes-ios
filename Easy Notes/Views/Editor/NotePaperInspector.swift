@@ -49,6 +49,8 @@ struct NotePaperInspector: View {
 
 struct NoteSettingsPopover: View {
     @ObservedObject var note: Note
+    @State private var hexInput = ""
+    let selectColor: (NSColor) -> Void
     let selectPaper: (GridStyle) -> Void
 
     var body: some View {
@@ -65,6 +67,27 @@ struct NoteSettingsPopover: View {
             ForEach(GridStyle.allCases, id: \.self) { style in
                 paperCard(style)
             }
+
+            if let style = GridStyle(rawValue: note.gridStyle), style != .none {
+                ColorPicker("Cor da grade", selection: Binding(
+                    get: { Color(nsColor: note.gridInk) },
+                    set: { selectColor(NSColor($0)) }
+                ), supportsOpacity: false)
+                .accessibilityValue(note.gridInk.hexString)
+
+                TextField("Hexadecimal", text: $hexInput)
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityLabel("Cor da grade em hexadecimal")
+                    .onChange(of: note.gridInk.hexString, initial: true) { _, hex in
+                        hexInput = hex
+                    }
+                    .onSubmit {
+                        if let components = PenColorComponents.fromHex(hexInput) {
+                            selectColor(NSColor(components.opaqueColor))
+                        }
+                        hexInput = note.gridInk.hexString
+                    }
+            }
         }
         .padding(16)
         .frame(width: 248)
@@ -78,7 +101,7 @@ struct NoteSettingsPopover: View {
             selectPaper(style)
         } label: {
             HStack(spacing: 8) {
-                PaperStylePreview(style: style)
+                PaperStylePreview(style: style, color: Color(nsColor: note.gridInk))
                     .accessibilityHidden(true)
 
                 Text(style.paperName)
@@ -110,10 +133,11 @@ struct NoteSettingsPopover: View {
 
 private struct PaperStylePreview: View {
     let style: GridStyle
+    let color: Color
 
     var body: some View {
         Canvas { context, _ in
-            let ink = GraphicsContext.Shading.color(PixelTheme.muted)
+            let ink = GraphicsContext.Shading.color(color)
 
             switch style {
             case .none:

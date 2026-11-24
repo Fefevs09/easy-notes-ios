@@ -140,6 +140,12 @@ public class CoreDataStack {
             noteEmojiAttribute
         ]
         
+        let gridColor = NSAttributeDescription()
+        gridColor.name = "gridColorHex"
+        gridColor.attributeType = .stringAttributeType
+        gridColor.isOptional = true
+        noteEntity.properties.append(gridColor)
+
         // --- 3. Entity: Stroke ---
         let strokeEntity = NSEntityDescription()
         strokeEntity.name = "Stroke"

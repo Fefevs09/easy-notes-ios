@@ -65,7 +65,6 @@ public enum SortOption: String, CaseIterable, Identifiable {
 
 public class NoteViewModel: ObservableObject {
     private let context: NSManagedObjectContext
-    private let pdfDelegate = AnnotatedPDFDelegate()
     private var cachedPDFDocument: PDFDocument? = nil
     private var cachedPDFDocumentNoteId: UUID? = nil
     public let coverCache: NoteCoverCache
@@ -470,10 +469,6 @@ public class NoteViewModel: ObservableObject {
             let blankData = createBlankPDF(pageCount: Int(max(1, note.pageCount)))
             doc = PDFDocument(data: blankData) ?? PDFDocument()
         }
-        doc.delegate = pdfDelegate
-        for pageIndex in 0..<doc.pageCount {
-            (doc.page(at: pageIndex) as? AnnotatedPDFPage)?.note = note
-        }
 
         cachedPDFDocument = doc
         cachedPDFDocumentNoteId = note.id
@@ -529,11 +524,20 @@ public class NoteViewModel: ObservableObject {
         }
     }
     
+    func setGridColor(_ color: NSColor, for note: Note) {
+        let hex = PenColorComponents.from(Color(nsColor: color)).hex6
+        guard hex != note.gridColorHex else { return }
+        note.gridColorHex = hex
+        note.updatedAt = Date()
+        save()
+        loadNotes()
+    }
+
     /// Sets the cartesian grid style for a note. When enabling a real grid for
-    /// the first time, centers the plane origin on the first page so the axes
-    /// land in a natural place.
+    /// the first time, phase-aligns its pattern to the center of the first page.
     public func setGridStyle(_ style: GridStyle, for note: Note) {
         note.gridStyle = style.rawValue
+        note.updatedAt = Date()
         if style != .none, note.gridOriginX == 0, note.gridOriginY == 0,
            let doc = getPDFDocument(for: note), let page = doc.page(at: 0) {
             let b = page.bounds(for: .mediaBox)

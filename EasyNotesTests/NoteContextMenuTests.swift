@@ -898,6 +898,46 @@ final class NoteContextMenuTests: XCTestCase {
 }
 
 extension NoteContextMenuTests {
+    func testGridColorMigrationPreservesExistingNotebookColor() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("paper.sqlite")
+        try autoreleasepool {
+            let source = CoreDataStack.makeModel()
+            let entity = try XCTUnwrap(source.entitiesByName["Note"])
+            entity.properties.removeAll { $0.name == "gridColorHex" }
+            for entity in source.entities {
+                entity.managedObjectClassName = NSStringFromClass(NSManagedObject.self)
+            }
+            let coordinator = NSPersistentStoreCoordinator(managedObjectModel: source)
+            let store = try coordinator.addPersistentStore(type: .sqlite, at: url)
+            let context = NSManagedObjectContext(concurrencyType: .mainQueueConcurrencyType)
+            context.persistentStoreCoordinator = coordinator
+            let folder = NSEntityDescription.insertNewObject(forEntityName: "Notebook", into: context)
+            folder.setValue(UUID(), forKey: "id")
+            folder.setValue("Papel", forKey: "name")
+            folder.setValue(3, forKey: "colorIndex")
+            let note = NSEntityDescription.insertNewObject(forEntityName: "Note", into: context)
+            note.setValue(UUID(), forKey: "id")
+            note.setValue("Original", forKey: "title")
+            note.setValue("Texto", forKey: "content")
+            note.setValue(Date(), forKey: "createdAt")
+            note.setValue(Date(), forKey: "updatedAt")
+            note.setValue("lines", forKey: "gridStyle")
+            note.setValue(folder, forKey: "notebook")
+            try context.save()
+            context.reset()
+            try coordinator.remove(store)
+        }
+        let container = try TestSupport.makeSQLiteContainer(at: url)
+        let note = try XCTUnwrap(container.viewContext.fetch(NSFetchRequest<Note>(entityName: "Note")).first)
+        XCTAssertEqual(note.gridStyle, "lines")
+        XCTAssertEqual(note.gridInk.hexString, "#000000")
+        XCTAssertEqual(note.notebook?.value(forKey: "colorIndex") as? NSNumber, 3)
+        try closeSQLiteContainer(container)
+    }
+
     func testMigratingLegacySQLiteAndEditingHierarchy() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)

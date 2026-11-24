@@ -597,6 +597,10 @@ final class NoteCoverTests: XCTestCase {
         XCTAssertEqual(migratedPDFNote.notebook?.id, notebookUUID)
         XCTAssertEqual(migratedPDFNote.pdfData, importedPDFBytes)
         XCTAssertEqual(migratedPDFNote.gridStyle, "grid")
+        XCTAssertNil(migratedPDFNote.gridColorHex)
+        XCTAssertEqual(migratedPDFNote.gridInk.hexString, "#000000")
+        viewModel.setGridColor(.red, for: migratedPDFNote)
+        XCTAssertNil(migratedTextNote.gridColorHex)
         XCTAssertEqual(migratedPDFNote.strokesArray.count, 1)
         let migratedStroke = try XCTUnwrap(migratedPDFNote.strokesArray.first)
         XCTAssertEqual(migratedStroke.id, strokeUUID)
@@ -623,6 +627,7 @@ final class NoteCoverTests: XCTestCase {
         let reopenedViewModel = NoteViewModel(context: reopenedContainer.viewContext, coverCache: NoteCoverCache())
         let reopenedPDFNote = try XCTUnwrap(reopenedViewModel.notes.first { $0.id == pdfNoteUUID })
 
+        XCTAssertEqual(reopenedPDFNote.gridColorHex, "#FF0000")
         XCTAssertTrue(reopenedPDFNote.hasCustomCover)
         XCTAssertEqual(reopenedPDFNote.coverMediaData, pngData)
         XCTAssertEqual(reopenedPDFNote.coverMediaType, UTType.png.identifier)
