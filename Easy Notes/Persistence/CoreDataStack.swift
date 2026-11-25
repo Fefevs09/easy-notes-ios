@@ -24,7 +24,7 @@ public enum CoreDataStorageError: LocalizedError, Equatable {
 }
 
 public class CoreDataStack {
-    public static let shared = CoreDataStack()
+    public static let shared = CoreDataStack(welcome: .shared)
     public static let storeFileName = "EasyNotesModel.sqlite"
     
     public let container: NSPersistentContainer
@@ -393,10 +393,20 @@ public class CoreDataStack {
         let warning: String?
     }
 
-    public init(storeURL: URL? = nil, defaults: UserDefaults = .standard) {
+    public convenience init(storeURL: URL? = nil, defaults: UserDefaults = .standard) {
+        self.init(storeURL: storeURL, defaults: defaults, welcome: nil)
+    }
+
+    init(
+        storeURL: URL? = nil,
+        defaults: UserDefaults = .standard,
+        welcome: WelcomeState?,
+        defaultStoreDirectory: URL? = nil
+    ) {
         let model = Self.makeModel()
         let persistentContainer = NSPersistentContainer(name: "EasyNotesModel", managedObjectModel: model)
-        let defaultURL = persistentContainer.persistentStoreDescriptions.first?.url
+        let defaultURL = defaultStoreDirectory?.appendingPathComponent(Self.storeFileName)
+            ?? persistentContainer.persistentStoreDescriptions.first?.url
             ?? Self.defaultStoreDirectoryURL.appendingPathComponent(Self.storeFileName)
 
         let preferredURL: URL?
@@ -413,6 +423,11 @@ public class CoreDataStack {
         }
 
         let targetURL = preferredURL ?? defaultURL
+        welcome?.prepare(
+            hasExistingInstallation: loadWarning != nil
+                || FileManager.default.fileExists(atPath: targetURL.path)
+                || FileManager.default.fileExists(atPath: defaultURL.path)
+        )
 
         let description = Self.makeStoreDescription(url: targetURL)
         persistentContainer.persistentStoreDescriptions = [description]
