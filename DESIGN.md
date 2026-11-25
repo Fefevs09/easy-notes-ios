@@ -37,6 +37,8 @@ A marca combina o ícone de caderno violeta e o nome “easy notes” em minúsc
 
 - 2026-11-23 — Nos cartões da grade com capa personalizada, a imagem ocupa toda a superfície. A legenda branca fica sobre um degradê escuro no rodapé e as ações ficam no canto superior direito (opção A).
 
+- 2026-11-24 — As boas-vindas reutilizam a marca, o cartão editorial e a cor de destaque do tema. Uma única ação, “Começar”, abre a biblioteca.
+
 ## Questões em aberto
 
 - Há algum aspecto da experiência do Samsung Notes que deve ser evitado?
