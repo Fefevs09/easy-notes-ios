@@ -271,21 +271,26 @@ struct EditorToolbarView: View {
 
     private var penOptions: some View {
         HStack(spacing: 2) {
-            penButton("Tinteiro", tool: .fountainPen)
-            penButton("Caligráfica", tool: .calligraphy)
-            penButton("Lápis", tool: .pencil)
+            penButton("Tinteiro", icon: "pencil.tip", tool: .fountainPen)
+            penButton("Caligráfica", icon: "paintbrush.pointed", tool: .calligraphy)
+            penButton("Lápis", icon: "pencil", tool: .pencil)
         }
         .padding(2)
         .modifier(OptionBorder())
         .fixedSize()
     }
 
-    private func penButton(_ title: LocalizedStringKey, tool: ToolType) -> some View {
-        segmentButton(title, isSelected: canvasVM.activeTool == tool) {
+    private func penButton(_ title: LocalizedStringKey, icon: String, tool: ToolType) -> some View {
+        segmentButton(isSelected: canvasVM.activeTool == tool) {
             if canvasVM.activeTool != tool {
                 canvasVM.selectTool(tool)
             }
+        } label: {
+            Image(systemName: icon)
+                .frame(width: 16, height: 14)
         }
+        .accessibilityLabel(Text(title))
+        .help(Text(title))
     }
 
     private var selectionOptions: some View {
@@ -446,8 +451,18 @@ struct EditorToolbarView: View {
     }
 
     private func segmentButton(_ title: LocalizedStringKey, isSelected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+        segmentButton(isSelected: isSelected, action: action) {
             Text(title)
+        }
+    }
+
+    private func segmentButton<Label: View>(
+        isSelected: Bool,
+        action: @escaping () -> Void,
+        @ViewBuilder label: () -> Label
+    ) -> some View {
+        Button(action: action) {
+            label()
                 .font(PixelTheme.uiFont(size: 11, weight: .medium))
                 .foregroundStyle(isSelected ? PixelTheme.accent : PixelTheme.inkSecondary)
                 .padding(.horizontal, 8)
