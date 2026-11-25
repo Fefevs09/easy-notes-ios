@@ -53,3 +53,9 @@ O build Release universal e a validação montada passaram. Em uma segunda monta
 
 - DMG local em `/tmp/easy-notes-feat02.K7gweI/dist/Easy-Notes-1.0-1-macOS-universal-local.dmg`
 - SHA-256 verificado `a477c95137d3cb807ac76f2672ea4e63a00ab045fe07ca4709934cd8a4682760`
+
+## Correções após revisão independente
+
+O pacote e o checksum são verificados em diretório temporário no mesmo volume do destino e publicados por renomeação exclusiva e atômica. Em teste com falha injetada na transferência do segundo arquivo, o destino continuou disponível e a repetição do comando no mesmo caminho concluiu com checksum válido. O teste reutilizou um produto Release já compilado.
+
+O script registra o ID devolvido pelo serviço antes de aguardar a notarização. Um serviço simulado que retornou ID e código de falha confirmou que o identificador permanece no log do operador. Validação real com Developer ID e notarização depende de credenciais de distribuição.

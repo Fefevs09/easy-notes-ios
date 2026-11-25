@@ -22,7 +22,9 @@ fi
 work=$(mktemp -d "${TMPDIR:-/tmp}/easy-notes-dmg.XXXXXX")
 mount="$work/mount"
 mounted=0
+pending=
 cleanup() {
+    if [[ -n "$pending" ]]; then rm -rf "$pending"; fi
     if [[ "$mounted" == 1 ]] && ! hdiutil detach "$mount" >&2; then
         printf 'Desmonte a imagem em %s antes de remover %s.\n' "$mount" "$work" >&2
         return 1
@@ -64,13 +66,16 @@ hdiutil create -srcfolder "$work/staging" -volname 'Easy Notes' -format UDZO "$i
 
 if [[ -n "$identity" ]]; then
     codesign "${sign_args[@]}" --identifier "$bundle_id.dmg" "$image"
-    # Keep the service response on disk and require an explicit acceptance before stapling.
-    if ! xcrun notarytool submit "$image" --keychain-profile "$notary_profile" \
-        --wait --output-format json > "$work/notary.json"; then
-        fail "Falha no envio ou na espera pelo serviço de notarização."
-    fi
-    submission=$(plutil -extract id raw -o - "$work/notary.json")
-    status=$(plutil -extract status raw -o - "$work/notary.json")
+    submit_result=0
+    xcrun notarytool submit "$image" --keychain-profile "$notary_profile" \
+        --output-format json > "$work/notary.json" || submit_result=$?
+    submission=$(plutil -extract id raw -o - "$work/notary.json" 2>/dev/null) ||
+        fail "Serviço de notarização não retornou um ID de envio."
+    printf 'ID de envio à notarização: %s\n' "$submission" >&2
+    [[ "$submit_result" == 0 ]] || fail "Falha no envio à notarização ($submission)."
+    xcrun notarytool wait "$submission" --keychain-profile "$notary_profile" \
+        --output-format json > "$work/wait.json" || fail "Falha ao aguardar envio $submission."
+    status=$(plutil -extract status raw -o - "$work/wait.json")
     [[ "$status" == Accepted ]] || fail "Notarização: $status (envio $submission)."
     xcrun stapler staple "$image"
     xcrun stapler validate "$image"
@@ -123,7 +128,15 @@ hdiutil detach "$mount"
 mounted=0
 
 (cd "$work" && shasum -a 256 "$name" > "$name.sha256")
-mkdir -- "$output"
-mv "$image" "$work/$name.sha256" "$output/"
-(cd "$output" && shasum -a 256 -c "$name.sha256")
+pending=$(mktemp -d "$(dirname "$output")/.easy-notes-release.XXXXXX")
+mv "$image" "$work/$name.sha256" "$pending/"
+(cd "$pending" && shasum -a 256 -c "$name.sha256")
+# Darwin's exclusive rename publishes both files atomically, even with concurrent callers.
+xcrun swift -e '
+import Darwin
+guard renamex_np(CommandLine.arguments[1], CommandLine.arguments[2], UInt32(RENAME_EXCL)) == 0 else {
+    perror("renamex_np")
+    exit(1)
+}' "$pending" "$output"
+pending=
 printf '%s\n' "$output/$name" "$output/$name.sha256"
