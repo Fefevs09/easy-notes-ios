@@ -425,6 +425,7 @@ public class CoreDataStack {
         let targetURL = preferredURL ?? defaultURL
         welcome?.prepare(
             hasExistingInstallation: loadWarning != nil
+                || (storeURL == nil && preferredURL != nil)
                 || FileManager.default.fileExists(atPath: targetURL.path)
                 || FileManager.default.fileExists(atPath: defaultURL.path)
         )

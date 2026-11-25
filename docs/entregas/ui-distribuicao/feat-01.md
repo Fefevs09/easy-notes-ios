@@ -27,3 +27,9 @@ xcodebuild -project 'Easy Notes.xcodeproj' -scheme 'Easy Notes' \
 ```
 
 A verificação manual da apresentação em duas janelas, foco por teclado e leitura pelo VoiceOver fica pendente para o aceite da interface.
+
+## Revisão e integração
+
+A revisão independente confirmou em duas janelas AppKit isoladas que Return e clique acionam Começar nas duas janelas. Identificou um caso em que mover o SQLite de uma pasta personalizada gravável fazia uma instalação antiga exibir boas-vindas. A detecção passou a reconhecer a preferência de armazenamento resolvida antes da abertura do SQLite. A construção do banco segue o comportamento anterior. O teste de regressão usa pasta e preferências temporárias.
+
+A compilação final com Xcode 27.2 passou com 81 testes e zero falhas. A leitura pelo VoiceOver, Tab/Espaço, bookmarks sob sandbox e a abertura de novas janelas no app distribuído seguem pendentes.

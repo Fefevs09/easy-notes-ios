@@ -106,6 +106,19 @@ final class WelcomeStateTests: XCTestCase {
         }
     }
 
+    func testConfiguredDirectoryWithoutSQLiteSkipsWelcome() throws {
+        try withInstallation { directory, defaults in
+            let custom = directory.appendingPathComponent("Custom", isDirectory: true)
+            try FileManager.default.createDirectory(at: custom, withIntermediateDirectories: true)
+            defaults.set(custom.path, forKey: AppSettingsStore.Keys.customStoragePath)
+            let welcome = WelcomeState(defaults: defaults)
+            let stack = CoreDataStack(defaults: defaults, welcome: welcome, defaultStoreDirectory: directory)
+            XCTAssertFalse(welcome.showsWelcome)
+            XCTAssertFalse(stack.didFallbackToDefaultStore)
+            XCTAssertEqual(stack.currentStoreURL?.path, custom.appendingPathComponent(CoreDataStack.storeFileName).path)
+        }
+    }
+
     func testUnavailableConfiguredStorageSkipsWelcomeWhenFallingBack() throws {
         try withInstallation { directory, defaults in
             defaults.set(directory.appendingPathComponent("Missing").path, forKey: AppSettingsStore.Keys.customStoragePath)
