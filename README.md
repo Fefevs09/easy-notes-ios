@@ -1,67 +1,42 @@
-# Easy Notes 📝
+<p align="center">
+  <img src="Easy%20Notes/Assets.xcassets/AppIcon.appiconset/icon_128x128%402x.png" width="128" height="128" alt="Ícone do Easy Notes">
+</p>
 
-Um aplicativo macOS premium de anotações com suporte a organização em cadernos (notebooks) e desenho livre (hand-drawn canvas sketching) integrado.
+<h1 align="center">Easy Notes</h1>
 
-Desenvolvido nativamente em **SwiftUI** e **AppKit** para macOS 13+, seguindo rigorosamente o padrão arquitetural **MVVM** e persistência local via **Core Data** programático.
+<p align="center">Um aplicativo nativo e totalmente gratuito para macOS, com código-fonte público. Organize suas anotações, escreva à mão e marque PDFs no mesmo lugar.</p>
 
----
+<p align="center">
+  <strong><a href="https://github.com/Fefevs09/easy-notes-ios/releases/download/v1.0-build.1-preview.1/Easy-Notes-1.0-1-macOS-universal-local.dmg">Baixar a prévia (.dmg)</a></strong>
+  ·
+  <a href="https://github.com/Fefevs09/easy-notes-ios/releases/tag/v1.0-build.1-preview.1">Notas da versão e checksum SHA-256</a>
+</p>
 
-## 📂 Estrutura do Projeto
+<p align="center">Prévia 1.0 (build 1) · macOS 26.2 ou posterior · Universal (Apple silicon e Intel)</p>
 
-O código-fonte segue a estrutura organizada por domínios e camadas de responsabilidade:
+## Por dentro do Easy Notes
 
-```text
-Easy Notes/
-├── Models/
-│   ├── Note.swift           # Entidade de Notas (Persistida)
-│   ├── Notebook.swift       # Entidade de Cadernos de Notas (Persistida)
-│   └── Stroke.swift         # Entidade de Traços de Desenho Livre (Persistida)
-├── Views/
-│   ├── ContentView.swift    # Tela principal integradora de colunas
-│   ├── Sidebar/
-│   │   └── SidebarView.swift# Coluna 1: Lista e ações de Cadernos
-│   ├── NoteList/
-│   │   └── NoteListView.swift# Coluna 2: Busca e lista de Notas filtradas
-│   ├── Editor/
-│   │   ├── TextEditorView.swift # Wraps NSTextView (Edição Rich Text/Focada)
-│   │   └── DrawingCanvasView.swift # Subclasse de NSView (Interface de Desenho)
-│   └── Toolbar/
-│       └── EditorToolbarView.swift # Barra superior com estatísticas e ferramentas de desenho
-├── ViewModels/
-│   ├── NoteViewModel.swift  # ViewModel MVVM das Notas e Cadernos
-│   └── CanvasViewModel.swift# ViewModel MVVM do Canvas de Desenho Livre
-├── Persistence/
-│   └── CoreDataStack.swift  # Inicializador programmatico do Core Data Stack
-└── Resources/
-    └── Assets.xcassets      # Catálogo de assets e cores do aplicativo
-```
+![Editor do Easy Notes com uma nota visual sobre o sistema solar](docs/imagens/nota-sistema-solar.png)
 
----
+*Exemplo de estudo com esquema visual e resumo em destaque. A imagem combina a interface do editor com a renderização do PDF de demonstração.*
 
-## 🛠️ Tecnologias e Recursos Utilizados
+![Biblioteca do Easy Notes com cadernos de estudos, projetos pessoais e planejamento](docs/imagens/biblioteca.png)
 
-- **Core Data (Programático):** Definição de esquema de banco de dados diretamente em código Swift (`NSManagedObjectModel`). Garante que a compilação seja limpa e elimina conflitos de mesclagem (merge conflicts) em arquivos XML `.xcdatamodeld`.
-- **AppKit/NSTextView:** Encapsulado via `NSViewRepresentable` para prover controle total das margens e espaçamento de linhas (Line-Height), resultando em um editor com tipografia e legibilidade de nível premium.
-- **Desenho Livre Integrado:** Subclasse nativa de `NSView` capturando eventos de mouse (`mouseDown`, `mouseDragged`, `mouseUp`) para renderizar curvas bezier dinâmicas, persistindo pontos, cor e espessura diretamente nas entidades Core Data associadas.
-- **Navegação de 3 Colunas:** Implementado utilizando o moderno `NavigationSplitView` com efeitos de desfoque translúcido (`.ultraThinMaterial`) nativos do macOS Ventura+.
+*Na biblioteca, os cadernos agrupam suas notas e a visualização em grade ajuda a encontrar a página certa.*
 
----
+## O que você pode fazer
 
-## 🚀 Como Compilar e Executar
+- **Encontre suas notas rapidamente.** Separe estudos, projetos e ideias em cadernos. Use a busca e alterne entre grade e lista.
+- **Escreva e desenhe do seu jeito.** Combine lápis, canetas, marca-texto e formas. Escolha papel pautado, quadriculado ou pontilhado para cada nota.
+- **Trabalhe com PDFs.** Importe documentos, faça marcações diretamente nas páginas e exporte o resultado em PDF.
+- **Guarde suas notas no Mac.** O app salva a biblioteca localmente e funciona sem exigir conta.
 
-1. Certifique-se de que o **Xcode 14.0+** esteja instalado em seu Mac rodando macOS 13+.
-2. Abra o arquivo `Easy Notes.xcodeproj` no Xcode.
-3. Selecione o target `Easy Notes` e a plataforma `My Mac`.
-4. Pressione `Cmd + R` para rodar ou compile via terminal:
-   ```bash
-   xcodebuild -project "Easy Notes.xcodeproj" -scheme "Easy Notes" -configuration Debug build
-   ```
+## Instalação
 
----
+Abra o arquivo `.dmg` e arraste o **Easy Notes** para a pasta **Aplicativos**.
 
-## 💡 Diretrizes de Desenvolvimento
+A prévia tem assinatura ad hoc e foi distribuída sem notarização da Apple. O Gatekeeper pode bloquear a abertura.
 
-Ao adicionar novas features ou realizar manutenções, siga estas premissas:
-1. **Preservação de MVVM:** Mantenha a separação de conceitos entre views e a manipulação de objetos gerenciados (Core Data). Use os ViewModels `NoteViewModel` e `CanvasViewModel`.
-2. **Design System Premium:** Utilize fontes arredondadas, opacidades graduadas, espaçamentos generosos de no mínimo 16-24pt e animações de transição suaves.
-3. **Persistência Programática:** Se precisar estender o banco de dados, faça-o modificando o `CoreDataStack.swift` diretamente em código Swift.
+## Desenvolvimento
+
+Abra `Easy Notes.xcodeproj` no Xcode, selecione o esquema **Easy Notes** e o destino **My Mac**, e pressione **⌘R**. O projeto foi testado com o Xcode 27.2.
