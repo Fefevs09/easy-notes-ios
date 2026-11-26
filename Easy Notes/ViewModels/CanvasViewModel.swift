@@ -133,7 +133,12 @@ public class CanvasViewModel: ObservableObject {
         PenColorToolContext(tool: activeTool)
     }
 
+    private let settings: AppSettingsStore
+
+    var pressureSensitivityEnabled: Bool { settings.pressureSensitivityEnabled }
+
     public init(settings: AppSettingsStore = .shared) {
+        self.settings = settings
         let defaultPenWidth = CGFloat(settings.defaultPenWidth)
         let defaultEraserWidth = CGFloat(settings.defaultEraserWidth)
         let defaultPenColor = settings.defaultPenColor
