@@ -225,6 +225,7 @@ struct ContentView: View {
     private func resetEditorPosition() {
         zoomScale = 1.0
         selectedPageIndex = 0
+        canvasVM.clearSelection()
     }
 
     private func fitCanvasToWidth(for note: Note) {

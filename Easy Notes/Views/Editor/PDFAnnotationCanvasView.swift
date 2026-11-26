@@ -361,9 +361,10 @@ class NSPDFAnnotationView: PDFView {
     /// (it's how the I-beam appears over selectable text), so overrides here
     /// actually fire and can restore the tool cursor.
     weak var canvasVM: CanvasViewModel?
+    weak var overlayProvider: AnnotatedPDFOverlayProvider?
     var currentZoom: CGFloat = 1.0
 
-    private func drawingCursor() -> NSCursor? {
+    private func rectCursor() -> NSCursor? {
         guard let canvasVM = canvasVM else { return nil }
         let hoveredPage = canvasVM.activeTool == .shape ? window.flatMap {
             page(for: convert($0.mouseLocationOutsideOfEventStream, from: nil), nearest: false)
@@ -371,15 +372,33 @@ class NSPDFAnnotationView: PDFView {
         return toolCursor(for: canvasVM, zoom: currentZoom, page: hoveredPage)
     }
 
+    private func pointerCursor() -> NSCursor? {
+        guard let canvasVM = canvasVM else { return nil }
+        if let selectionCursor = overlayProvider?.selectionCursor(in: self) {
+            return selectionCursor
+        }
+        if canvasVM.isDrawingMode, canvasVM.activeTool == .select {
+            return .arrow
+        }
+        return rectCursor()
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if overlayProvider?.handleKeyDown(event, in: self) == true {
+            return
+        }
+        super.keyDown(with: event)
+    }
+
     override func resetCursorRects() {
         super.resetCursorRects()
-        if let cursor = drawingCursor() {
+        if let cursor = rectCursor() {
             addCursorRect(bounds, cursor: cursor)
         }
     }
 
     override func cursorUpdate(with event: NSEvent) {
-        if let cursor = drawingCursor() {
+        if let cursor = pointerCursor() {
             cursor.set()
         } else {
             super.cursorUpdate(with: event)
@@ -391,14 +410,14 @@ class NSPDFAnnotationView: PDFView {
         // Reassert on every move: PDFView reliably receives mouse-moved events,
         // so this restores the tool cursor on the first movement after any
         // PDFKit relayout stomped it back to the default arrow.
-        drawingCursor()?.set()
+        pointerCursor()?.set()
     }
 
     /// Force the tool cursor if the pointer is currently inside the view. Used
     /// after a save/relayout when the pointer is stationary and no move event
     /// will fire to trigger the restoration in `mouseMoved`.
     func reassertCursorIfInside() {
-        guard let window = window, let cursor = drawingCursor() else { return }
+        guard let window = window, let cursor = pointerCursor() else { return }
         let point = convert(window.mouseLocationOutsideOfEventStream, from: nil)
         if bounds.contains(point) { cursor.set() }
     }
@@ -434,13 +453,22 @@ class PageDrawingCanvas: NSView {
     private var activeShapeStart: CGPoint?
     private var activeShapePoints: [CGPoint] = []
 
-    // Selection / editing of an existing shape.
-    private var draggingShape: ShapeObject?
-    private var draggingPoints: [CGPoint] = []
-    private var dragHandleIndex: Int?   // nil => translate whole shape
-    private var lastDragPoint: CGPoint = .zero
-    private let handleRadius: CGFloat = 6.0
-    private let hitThreshold: CGFloat = 12.0
+    // Unified selection, hit-test, marquee, and group movement controller.
+    let selectionController = CanvasSelectionController()
+
+    var pageToOverlayTransform: CGAffineTransform {
+        guard superview != nil, window != nil, let page = paperPage, let pdfView else { return .identity }
+        let origin = convert(pdfView.convert(.zero as CGPoint, from: page), from: pdfView)
+        let x = convert(pdfView.convert(CGPoint(x: 1, y: 0), from: page), from: pdfView)
+        let y = convert(pdfView.convert(CGPoint(x: 0, y: 1), from: page), from: pdfView)
+        let transform = CGAffineTransform(
+            a: x.x - origin.x, b: x.y - origin.y,
+            c: y.x - origin.x, d: y.y - origin.y,
+            tx: origin.x, ty: origin.y
+        )
+        let det = transform.a * transform.d - transform.b * transform.c
+        return abs(det) > 1e-6 ? transform : .identity
+    }
 
     init(pageIndex: Int, noteVM: NoteViewModel?, canvasVM: CanvasViewModel?) {
         self.pageIndex = pageIndex
@@ -480,26 +508,35 @@ class PageDrawingCanvas: NSView {
     }
 
     override func cursorUpdate(with event: NSEvent) {
-        guard applyToolCursor() else {
+        let point = convert(event.locationInWindow, from: nil)
+        guard applyToolCursor(at: point) else {
             super.cursorUpdate(with: event)
             return
         }
     }
 
     override func mouseMoved(with event: NSEvent) {
-        guard applyToolCursor() else {
+        let point = convert(event.locationInWindow, from: nil)
+        guard applyToolCursor(at: point) else {
             super.mouseMoved(with: event)
             return
         }
     }
 
-    /// Sets the tool cursor if we're in an active drawing tool. Returns whether
-    /// it took ownership of the cursor (false => caller should defer to super).
+    /// Sets the tool or selection cursor if we're in an active drawing/select mode.
     @discardableResult
-    private func applyToolCursor() -> Bool {
-        guard let canvasVM = canvasVM, canvasVM.isDrawingMode,
-              canvasVM.activeTool != .select else { return false }
-        currentToolCursor().set()
+    private func applyToolCursor(at point: CGPoint? = nil) -> Bool {
+        guard let canvasVM = canvasVM, canvasVM.isDrawingMode else { return false }
+        let targetPoint = point ?? window.map { convert($0.mouseLocationOutsideOfEventStream, from: nil) }
+        if let selectionCursor = targetPoint.flatMap({ selectionCursor(at: $0) }) {
+            selectionCursor.set()
+            return true
+        }
+        if canvasVM.activeTool == .select {
+            NSCursor.arrow.set()
+            return true
+        }
+        currentToolCursor(at: targetPoint).set()
         return true
     }
 
@@ -508,11 +545,27 @@ class PageDrawingCanvas: NSView {
     /// pointer is stationary, e.g. right after a stroke is saved).
     func applyCursorIfInside() {
         guard let window = window, let canvasVM = canvasVM,
-              canvasVM.isDrawingMode, canvasVM.activeTool != .select else { return }
+              canvasVM.isDrawingMode else { return }
         let point = convert(window.mouseLocationOutsideOfEventStream, from: nil)
         if bounds.contains(point) {
-            currentToolCursor().set()
+            if let selectionCursor = selectionCursor(at: point) {
+                selectionCursor.set()
+            } else if canvasVM.activeTool == .select {
+                NSCursor.arrow.set()
+            } else {
+                currentToolCursor(at: point).set()
+            }
         }
+    }
+
+    func selectionCursor(at point: CGPoint) -> NSCursor? {
+        selectionController.cursor(
+            at: point,
+            note: noteVM?.selectedNote,
+            pageIndex: pageIndex,
+            pageToOverlay: pageToOverlayTransform,
+            canvasVM: canvasVM
+        )
     }
 
     /// The cursor for the active tool. Extracted so it can be both registered as
@@ -521,7 +574,10 @@ class PageDrawingCanvas: NSView {
     /// pointer would otherwise revert to the arrow the moment a stroke finishes.
     /// Delegates to the shared `toolCursor(for:zoom:)` builder (same cache the
     /// PDFView uses).
-    private func currentToolCursor() -> NSCursor {
+    private func currentToolCursor(at point: CGPoint? = nil) -> NSCursor {
+        if let point, let selectionCursor = selectionCursor(at: point) {
+            return selectionCursor
+        }
         guard let canvasVM = canvasVM else { return .arrow }
         return toolCursor(for: canvasVM, zoom: currentZoom, page: paperPage) ?? .arrow
     }
@@ -557,16 +613,9 @@ class PageDrawingCanvas: NSView {
         // Bottom layers (grid, images, and persisted shapes) via the shared CGContext path.
         if let cg = NSGraphicsContext.current?.cgContext {
             renderGrid(for: note, in: bounds, into: cg)
-            if let page = paperPage, let pdfView {
-                // Convert three PDF page points to account for PDFKit's rotation,
-                // media box origin, and overlay layout.
-                let origin = convert(pdfView.convert(.zero as CGPoint, from: page), from: pdfView)
-                let x = convert(pdfView.convert(CGPoint(x: 1, y: 0), from: page), from: pdfView)
-                let y = convert(pdfView.convert(CGPoint(x: 0, y: 1), from: page), from: pdfView)
+            if paperPage != nil, pdfView != nil {
                 cg.saveGState()
-                cg.concatenate(CGAffineTransform(a: x.x - origin.x, b: x.y - origin.y,
-                                                 c: y.x - origin.x, d: y.y - origin.y,
-                                                 tx: origin.x, ty: origin.y))
+                cg.concatenate(pageToOverlayTransform)
                 renderEditorImages(for: note, pageIndex: pageIndex, into: cg)
                 cg.restoreGState()
             }
@@ -634,43 +683,14 @@ class PageDrawingCanvas: NSView {
             drawShapeCreationDots(on: previewPath, zoom: currentZoom, arrowWingLength: wing, in: cg)
         }
 
-        // Selection handles for the selected shape on this page.
-        if canvasVM.activeTool == .select,
-           let selID = canvasVM.selectedShapeID,
-           let shape = shapeForID(selID), shape.pageIndex == Int16(pageIndex) {
-            let pts = draggingShape === shape ? draggingPoints
-                                              : deserializeStrokePoints(shape.points)
-            drawSelection(for: ShapeKind(rawValue: shape.kind) ?? .line,
-                          points: pts, in: cg)
-        }
-    }
-
-    private func drawSelection(for kind: ShapeKind, points: [CGPoint], in cg: CGContext) {
-        guard points.count >= 2 else { return }
-        cg.saveGState()
-        // Dashed outline around the shape.
-        cg.addPath(makeShapeCGPath(kind: kind, points: points))
-        cg.setLineWidth(1.0)
-        cg.setLineDash(phase: 0, lengths: [4, 3])
-        cg.setStrokeColor(NSColor.controlAccentColor.cgColor)
-        cg.strokePath()
-        cg.setLineDash(phase: 0, lengths: [])
-        // Square handles at each control point.
-        for p in points {
-            let r = CGRect(x: p.x - handleRadius, y: p.y - handleRadius,
-                           width: handleRadius * 2, height: handleRadius * 2)
-            cg.setFillColor(NSColor.white.cgColor)
-            cg.fill(r)
-            cg.setStrokeColor(NSColor.controlAccentColor.cgColor)
-            cg.setLineWidth(1.0)
-            cg.stroke(r)
-        }
-        cg.restoreGState()
-    }
-
-    private func shapeForID(_ id: UUID) -> ShapeObject? {
-        let shapesSet = noteVM?.selectedNote?.shapes as? Set<ShapeObject> ?? []
-        return shapesSet.first { $0.id == id }
+        // Selection handles, group bounds, and marquee rectangle.
+        selectionController.drawOverlay(
+            in: cg,
+            note: note,
+            pageIndex: pageIndex,
+            pageToOverlay: pageToOverlayTransform,
+            canvasVM: canvasVM
+        )
     }
 
     override var acceptsFirstResponder: Bool { true }
@@ -693,14 +713,38 @@ class PageDrawingCanvas: NSView {
             activeShapePoints = [point, point]
             needsDisplay = true
         case .select:
-            beginSelection(at: point)
-        default:
-            activePoints = [point]
-            canvasVM.activeStroke = CanvasViewModel.ActiveStroke(pageIndex: pageIndex, points: activePoints)
+            if let note = noteVM?.selectedNote {
+                selectionController.beginSelectInteraction(
+                    at: point,
+                    modifierFlags: event.modifierFlags,
+                    note: note,
+                    pageIndex: pageIndex,
+                    pageToOverlay: pageToOverlayTransform,
+                    canvasVM: canvasVM
+                )
+            } else {
+                canvasVM.clearSelection()
+            }
             needsDisplay = true
+        default:
+            if let note = noteVM?.selectedNote,
+               selectionController.beginPenInteractionIfInsideSelection(
+                at: point,
+                note: note,
+                pageIndex: pageIndex,
+                pageToOverlay: pageToOverlayTransform,
+                canvasVM: canvasVM
+               ) {
+                needsDisplay = true
+            } else {
+                activePoints = [point]
+                canvasVM.activeStroke = CanvasViewModel.ActiveStroke(pageIndex: pageIndex, points: activePoints)
+                needsDisplay = true
+            }
         }
 
         invalidateCursor()
+        applyToolCursor(at: point)
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -720,16 +764,35 @@ class PageDrawingCanvas: NSView {
                 needsDisplay = true
             }
         case .select:
-            updateSelectionDrag(to: point)
+            if let note = noteVM?.selectedNote,
+               selectionController.updateDrag(
+                to: point,
+                note: note,
+                pageIndex: pageIndex,
+                pageToOverlay: pageToOverlayTransform,
+                canvasVM: canvasVM
+               ) {
+                needsDisplay = true
+            }
         default:
-            if let active = canvasVM.activeStroke, active.pageIndex == pageIndex {
+            if selectionController.isDragging,
+               let note = noteVM?.selectedNote,
+               selectionController.updateDrag(
+                to: point,
+                note: note,
+                pageIndex: pageIndex,
+                pageToOverlay: pageToOverlayTransform,
+                canvasVM: canvasVM
+               ) {
+                needsDisplay = true
+            } else if let active = canvasVM.activeStroke, active.pageIndex == pageIndex {
                 activePoints.append(point)
                 canvasVM.activeStroke = CanvasViewModel.ActiveStroke(pageIndex: pageIndex, points: activePoints)
                 needsDisplay = true
             }
         }
 
-        invalidateCursor()
+        applyToolCursor(at: point)
     }
 
     override func mouseUp(with event: NSEvent) {
@@ -737,6 +800,8 @@ class PageDrawingCanvas: NSView {
             super.mouseUp(with: event)
             return
         }
+
+        let point = self.convert(event.locationInWindow, from: nil)
 
         switch canvasVM.activeTool {
         case .eraser:
@@ -746,11 +811,27 @@ class PageDrawingCanvas: NSView {
             activeShapeStart = nil
             activeShapePoints.removeAll()
         case .select:
-            endSelectionDrag()
+            selectionController.endDrag(
+                note: noteVM?.selectedNote,
+                noteVM: noteVM,
+                pageIndex: pageIndex,
+                pageToOverlay: pageToOverlayTransform,
+                canvasVM: canvasVM
+            )
         default:
-            if !activePoints.isEmpty { saveActiveStroke() }
-            activePoints.removeAll()
-            canvasVM.activeStroke = nil
+            if selectionController.isDragging {
+                selectionController.endDrag(
+                    note: noteVM?.selectedNote,
+                    noteVM: noteVM,
+                    pageIndex: pageIndex,
+                    pageToOverlay: pageToOverlayTransform,
+                    canvasVM: canvasVM
+                )
+            } else {
+                if !activePoints.isEmpty { saveActiveStroke() }
+                activePoints.removeAll()
+                canvasVM.activeStroke = nil
+            }
         }
 
         needsDisplay = true
@@ -758,7 +839,24 @@ class PageDrawingCanvas: NSView {
         // Re-assert the tool cursor immediately: the pointer is stationary at
         // release, so AppKit won't rebuild the cursor rect until the next move
         // and would otherwise show the default arrow in the meantime.
-        currentToolCursor().set()
+        currentToolCursor(at: point).set()
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if selectionController.handleKeyDown(
+            event,
+            note: noteVM?.selectedNote,
+            noteVM: noteVM,
+            pageIndex: pageIndex,
+            pageToOverlay: pageToOverlayTransform,
+            canvasVM: canvasVM,
+            firstResponder: window?.firstResponder
+        ) {
+            needsDisplay = true
+            invalidateCursor()
+            return
+        }
+        super.keyDown(with: event)
     }
 
     // MARK: Shape creation
@@ -791,100 +889,6 @@ class PageDrawingCanvas: NSView {
         } catch {
             Swift.print("Failed to save shape: \(error)")
         }
-    }
-
-    // MARK: Selection / editing
-
-    private func beginSelection(at point: CGPoint) {
-        guard let canvasVM = canvasVM else { return }
-        draggingShape = nil
-        dragHandleIndex = nil
-        lastDragPoint = point
-
-        // First, if a shape is already selected, test its handles.
-        if let selID = canvasVM.selectedShapeID, let shape = shapeForID(selID),
-           shape.pageIndex == Int16(pageIndex) {
-            let pts = deserializeStrokePoints(shape.points)
-            if let idx = handleIndex(near: point, in: pts) {
-                draggingShape = shape
-                draggingPoints = pts
-                dragHandleIndex = idx
-                return
-            }
-        }
-
-        // Otherwise hit-test shape bodies (topmost / most recent first).
-        if let shape = topmostShape(at: point) {
-            canvasVM.selectedShapeID = shape.id
-            draggingShape = shape
-            draggingPoints = deserializeStrokePoints(shape.points)
-            dragHandleIndex = nil // move whole shape
-        } else {
-            canvasVM.selectedShapeID = nil
-        }
-        needsDisplay = true
-    }
-
-    private func updateSelectionDrag(to point: CGPoint) {
-        guard let shape = draggingShape else { return }
-        let dx = point.x - lastDragPoint.x
-        let dy = point.y - lastDragPoint.y
-        lastDragPoint = point
-
-        if let idx = dragHandleIndex, idx < draggingPoints.count {
-            draggingPoints[idx] = point
-        } else {
-            draggingPoints = draggingPoints.map { CGPoint(x: $0.x + dx, y: $0.y + dy) }
-        }
-        shape.points = serializePoints(draggingPoints)
-        needsDisplay = true
-    }
-
-    private func endSelectionDrag() {
-        guard let shape = draggingShape,
-              let moc = shape.managedObjectContext else {
-            draggingShape = nil
-            return
-        }
-        shape.points = serializePoints(draggingPoints)
-        do {
-            try moc.save()
-            noteVM?.loadNotes()
-        } catch {
-            Swift.print("Failed to save shape edit: \(error)")
-        }
-        draggingShape = nil
-        dragHandleIndex = nil
-    }
-
-    private func handleIndex(near point: CGPoint, in pts: [CGPoint]) -> Int? {
-        for (i, p) in pts.enumerated() {
-            if hypot(p.x - point.x, p.y - point.y) <= handleRadius + 2 { return i }
-        }
-        return nil
-    }
-
-    private func topmostShape(at point: CGPoint) -> ShapeObject? {
-        let shapesSet = noteVM?.selectedNote?.shapes as? Set<ShapeObject> ?? []
-        let pageShapes = shapesSet
-            .filter { $0.pageIndex == Int16(pageIndex) }
-            .sorted { $0.createdAt > $1.createdAt } // most recent on top
-
-        for shape in pageShapes {
-            let kind = ShapeKind(rawValue: shape.kind) ?? .line
-            let pts = deserializeStrokePoints(shape.points)
-            guard pts.count >= 2 else { continue }
-
-            if shapeIsClosed(kind), let fillHex = shape.fillColor, fillHex.isEmpty == false {
-                let path = makeShapeCGPath(kind: kind, points: pts)
-                if path.contains(point) { return shape }
-            }
-            let outline = sampleShapePolyline(kind: kind, points: pts)
-            for p in outline where hypot(p.x - point.x, p.y - point.y) < hitThreshold {
-                return shape
-            }
-        }
-        return nil
     }
 
     private func saveActiveStroke() {
@@ -1048,11 +1052,21 @@ class AnnotatedPDFOverlayProvider: NSObject, PDFPageOverlayViewProvider {
     }
 
     func clearCache() {
+        for canvas in overlays.values {
+            canvas.selectionController.cancelActiveDrag()
+        }
         overlays.removeAll()
     }
 
     func redrawAll() {
+        let incompatibleForSelectionDrag = canvasVM.map {
+            !$0.isDrawingMode || $0.activeTool == .eraser || $0.activeTool == .shape
+        } ?? true
+
         for canvas in overlays.values {
+            if incompatibleForSelectionDrag && canvas.selectionController.isDragging {
+                canvas.selectionController.cancelActiveDrag()
+            }
             canvas.needsDisplay = true
             canvas.invalidateCursor()
         }
@@ -1065,6 +1079,50 @@ class AnnotatedPDFOverlayProvider: NSObject, PDFPageOverlayViewProvider {
         for canvas in overlays.values {
             canvas.applyCursorIfInside()
         }
+    }
+
+    func selectionCursor(in pdfView: PDFView) -> NSCursor? {
+        guard let window = pdfView.window else { return nil }
+        let viewPoint = pdfView.convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        guard pdfView.bounds.contains(viewPoint),
+              let page = pdfView.page(for: viewPoint, nearest: false),
+              let doc = pdfView.document else {
+            return nil
+        }
+        let pageIndex = doc.index(for: page)
+        guard let canvas = overlays[pageIndex] else { return nil }
+        let localPoint = canvas.convert(viewPoint, from: pdfView)
+        return canvas.selectionCursor(at: localPoint)
+    }
+
+    func handleKeyDown(_ event: NSEvent, in pdfView: PDFView) -> Bool {
+        guard let canvasVM, !canvasVM.selectedObjects.isEmpty || overlays.values.contains(where: { $0.selectionController.isDragging }) else {
+            return false
+        }
+        let targetPage = canvasVM.selectedPageIndexForSelection
+            ?? pdfView.currentPage.flatMap { pdfView.document?.index(for: $0) }
+        guard let targetPage,
+              let canvas = overlays[targetPage],
+              canvas.window != nil,
+              canvas.superview != nil,
+              let paperPage = canvas.paperPage,
+              pdfView.currentPage === paperPage || pdfView.visiblePages.contains(where: { $0 === paperPage }) else {
+            return false
+        }
+        if canvas.selectionController.handleKeyDown(
+            event,
+            note: noteVM?.selectedNote,
+            noteVM: noteVM,
+            pageIndex: targetPage,
+            pageToOverlay: canvas.pageToOverlayTransform,
+            canvasVM: canvasVM,
+            firstResponder: pdfView.window?.firstResponder
+        ) {
+            canvas.needsDisplay = true
+            canvas.invalidateCursor()
+            return true
+        }
+        return false
     }
 }
 
@@ -1112,6 +1170,7 @@ struct PDFAnnotationCanvasView: NSViewRepresentable {
         pdfView.backgroundColor = PixelTheme.nsCanvasBackground
 
         pdfView.pageOverlayViewProvider = context.coordinator.provider
+        pdfView.overlayProvider = context.coordinator.provider
 
         NotificationCenter.default.addObserver(forName: .PDFViewPageChanged, object: pdfView, queue: .main) { _ in
             if let page = pdfView.currentPage, let doc = pdfView.document {
