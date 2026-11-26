@@ -7,6 +7,7 @@ struct EditorToolbarView: View {
     @ObservedObject var canvasVM: CanvasViewModel
     @ObservedObject private var settings = AppSettingsStore.shared
     @Binding var isSidebarOpen: Bool
+    var onInsertImage: (() -> Void)? = nil
     var onBackToLibrary: (() -> Void)? = nil
 
     @Environment(\.displayScale) private var displayScale
@@ -94,6 +95,15 @@ struct EditorToolbarView: View {
             }
 
             shapePickerButton
+            if let onInsertImage {
+                Button(action: onInsertImage) {
+                    iconLabel("photo", color: PixelTheme.inkSecondary)
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut("i", modifiers: [.command, .shift])
+                .accessibilityLabel("Inserir imagem")
+                .help("Inserir imagem PNG ou JPEG (⇧⌘I)")
+            }
             separator
 
             Button {

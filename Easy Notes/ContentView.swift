@@ -12,6 +12,7 @@ struct ContentView: View {
     @State private var canvasViewportWidth: CGFloat = 0
     @State private var isSidebarOpen = true
     @State private var selectedPageIndex = 0
+    @State private var imageImportError: String?
 
     var body: some View {
         Group {
@@ -55,7 +56,9 @@ struct ContentView: View {
 
         return VStack(spacing: 0) {
             editorHeader(for: note)
-            EditorToolbarView(canvasVM: canvasVM, isSidebarOpen: $isSidebarOpen) {
+            EditorToolbarView(canvasVM: canvasVM, isSidebarOpen: $isSidebarOpen, onInsertImage: {
+                chooseEditorImage(for: note, pageIndex: selectedPageIndex)
+            }) {
                 viewModel.selectedNote = nil
             }
 
@@ -91,6 +94,14 @@ struct ContentView: View {
             )
         }
         .background(PixelTheme.paper)
+        .alert("Falha ao inserir imagem", isPresented: Binding(
+            get: { imageImportError != nil },
+            set: { if !$0 { imageImportError = nil } }
+        )) {
+            Button("OK") { imageImportError = nil }
+        } message: {
+            Text(imageImportError ?? "")
+        }
     }
 
     private func editorHeader(for note: Note) -> some View {
@@ -181,6 +192,29 @@ struct ContentView: View {
         .background(PixelTheme.surface)
         .overlay(alignment: .trailing) {
             Rectangle().fill(PixelTheme.border).frame(width: 1)
+        }
+    }
+
+    private func chooseEditorImage(for note: Note, pageIndex: Int) {
+        let panel = NSOpenPanel()
+        panel.title = "Inserir imagem"
+        panel.prompt = "Inserir"
+        panel.allowedContentTypes = [.png, .jpeg]
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        let completion: (NSApplication.ModalResponse) -> Void = { response in
+            guard response == .OK, let url = panel.url else { return }
+            do {
+                let data = try EditorImageMedia.read(from: url)
+                try viewModel.insertEditorImage(data: data, into: note, pageIndex: pageIndex)
+            } catch {
+                imageImportError = error.localizedDescription
+            }
+        }
+        if let window = canvasFocus.view?.window {
+            panel.beginSheetModal(for: window, completionHandler: completion)
+        } else {
+            panel.begin(completionHandler: completion)
         }
     }
 
