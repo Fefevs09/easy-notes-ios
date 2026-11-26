@@ -2,6 +2,7 @@ import AppKit
 import CoreData
 import ImageIO
 import PDFKit
+import SwiftUI
 import UniformTypeIdentifiers
 import XCTest
 
@@ -201,22 +202,82 @@ final class EditorImageTests: XCTestCase {
     }
 
     @MainActor
-    func testPageThumbnailAndExportKeepImageBelowStrokeOnRotatedOffsetPage() throws {
+    func testOverlayDrawingsAlignWithImageInThumbnailAndExportOnRotatedOffsetPage() throws {
         let (model, context) = TestSupport.makeInMemoryViewModel()
         model.addNote(title: "Duas páginas")
         let note = try XCTUnwrap(model.selectedNote)
         note.pdfData = try pdfData()
         note.pageCount = 2
         note.gridStyle = "grid"
-        let stroke = Stroke(context: context)
-        stroke.id = UUID()
-        stroke.points = "180,320;300,320"
-        stroke.color = "#00FF00"
-        stroke.width = 24
-        stroke.createdAt = Date()
-        stroke.pageIndex = 1
-        stroke.note = note
+        _ = NSApplication.shared
         try context.save()
+        let document = try XCTUnwrap(model.getPDFDocument(for: note))
+        let page = try XCTUnwrap(document.page(at: 1))
+
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 720, height: 600),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        let pdfView = NSPDFAnnotationView()
+        let tools = CanvasViewModel()
+        let provider = AnnotatedPDFOverlayProvider(noteVM: model, canvasVM: tools)
+        window.contentView = pdfView
+        pdfView.displayMode = .singlePageContinuous
+        pdfView.displayBox = .mediaBox
+        pdfView.minScaleFactor = 0.25
+        pdfView.maxScaleFactor = 4
+        pdfView.pageOverlayViewProvider = provider
+        pdfView.document = document
+        pdfView.go(to: page)
+        pdfView.scaleFactor = 0.8
+        pdfView.layoutDocumentView()
+        window.displayIfNeeded()
+
+        let overlay = try XCTUnwrap(provider.pdfView(pdfView, overlayViewFor: page) as? PageDrawingCanvas)
+        XCTAssertTrue(overlay.window === window)
+        XCTAssertEqual(pdfView.scaleFactor, 0.8, accuracy: 0.001)
+
+        func localPoint(_ point: CGPoint) -> CGPoint {
+            overlay.convert(pdfView.convert(point, from: page), from: pdfView)
+        }
+
+        func drag(from start: CGPoint, to end: CGPoint) throws {
+            for (type, point) in [(NSEvent.EventType.leftMouseDown, start),
+                                  (.leftMouseDragged, end), (.leftMouseUp, end)] {
+                let event = try XCTUnwrap(NSEvent.mouseEvent(
+                    with: type, location: overlay.convert(localPoint(point), to: nil),
+                    modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
+                    context: nil, eventNumber: 1, clickCount: 1, pressure: 1
+                ))
+                switch type {
+                case .leftMouseDown: overlay.mouseDown(with: event)
+                case .leftMouseDragged: overlay.mouseDragged(with: event)
+                default: overlay.mouseUp(with: event)
+                }
+            }
+        }
+
+        tools.strokeColor = Color(nsColor: .green)
+        tools.strokeWidth = 24
+        try drag(from: CGPoint(x: 180, y: 320), to: CGPoint(x: 300, y: 320))
+        let stroke = try XCTUnwrap(note.strokesArray.first)
+        XCTAssertEqual(stroke.pageIndex, 1)
+        XCTAssertEqual(deserializeStrokePoints(stroke.points).first?.x ?? .nan, 140, accuracy: 1)
+        XCTAssertEqual(deserializeStrokePoints(stroke.points).first?.y ?? .nan, 250, accuracy: 1)
+
+        pdfView.scaleFactor = 1.5
+        pdfView.layoutDocumentView()
+        window.displayIfNeeded()
+        XCTAssertEqual(pdfView.scaleFactor, 1.5, accuracy: 0.001)
+        tools.activeTool = .shape
+        tools.activeShapeKind = .rectangle
+        tools.strokeColor = Color(nsColor: .magenta)
+        tools.strokeWidth = 16
+        try drag(from: CGPoint(x: 170, y: 265), to: CGPoint(x: 240, y: 300))
+        let shape = try XCTUnwrap(note.shapesArray.first)
+        XCTAssertEqual(shape.pageIndex, 1)
+        XCTAssertEqual(shape.kind, ShapeKind.rectangle.rawValue)
+        XCTAssertEqual(deserializeStrokePoints(shape.points).first?.x ?? .nan, 130, accuracy: 1)
+        XCTAssertEqual(deserializeStrokePoints(shape.points).first?.y ?? .nan, 195, accuracy: 1)
+
         note.title = "Edição ainda pendente"
         let png = try imageData()
         try model.insertEditorImage(data: png, into: note, pageIndex: 1)
@@ -225,6 +286,32 @@ final class EditorImageTests: XCTestCase {
         let persisted = NSManagedObjectContext(concurrencyType: .mainQueueConcurrencyType)
         persisted.persistentStoreCoordinator = context.persistentStoreCoordinator
         XCTAssertEqual(try (persisted.existingObject(with: note.objectID) as? Note)?.title, "Duas páginas")
+
+        let bitmap = try XCTUnwrap(overlay.bitmapImageRepForCachingDisplay(in: overlay.bounds))
+        overlay.cacheDisplay(in: overlay.bounds, to: bitmap)
+        let canvas = NSImage(size: overlay.bounds.size)
+        canvas.addRepresentation(bitmap)
+
+        func checkLayers(in image: NSImage, size: CGSize, convert: (CGPoint) -> CGPoint,
+                         surface: String) throws {
+            func sample(_ x: CGFloat, _ y: CGFloat) throws -> NSColor {
+                try pixel(in: image, at: convert(CGPoint(x: x, y: y)), width: size.width, height: size.height)
+            }
+            let red = try sample(280, 360)
+            let blue = try sample(200, 280)
+            let green = try sample(240, 320)
+            let magenta = try sample(200, 300)
+            XCTAssertGreaterThan(red.redComponent - red.greenComponent, 0.45, surface)
+            XCTAssertGreaterThan(blue.blueComponent - blue.redComponent, 0.45, surface)
+            XCTAssertGreaterThan(green.greenComponent - green.redComponent, 0.45, surface)
+            XCTAssertGreaterThan(magenta.redComponent - magenta.greenComponent, 0.45, surface)
+            XCTAssertGreaterThan(magenta.blueComponent - magenta.greenComponent, 0.45, surface)
+        }
+
+        try checkLayers(in: canvas, size: overlay.bounds.size, convert: localPoint, surface: "canvas")
+        pdfView.document = nil
+        window.contentView = nil
+        XCTAssertNil(overlay.window)
 
         let url = try temporaryDirectory().appendingPathComponent("Export.pdf")
         try model.exportPDF(for: note, to: url, options: PDFExportOptions(includeGrid: false))
@@ -236,61 +323,15 @@ final class EditorImageTests: XCTestCase {
         let thumbnail = PageThumbnail.renderThumbnail(for: activePage, note: note, pageIndex: 1)
         let exported = exportedPage.thumbnail(of: CGSize(width: 224, height: 296), for: .mediaBox)
         let transform = activePage.transform(for: .mediaBox)
-        for image in [thumbnail, exported] {
-            let red = try pixel(in: image, at: CGPoint(x: 280, y: 360).applying(transform), width: 500, height: 400)
-            let blue = try pixel(in: image, at: CGPoint(x: 200, y: 280).applying(transform), width: 500, height: 400)
-            let green = try pixel(in: image, at: CGPoint(x: 240, y: 320).applying(transform), width: 500, height: 400)
-            XCTAssertGreaterThan(red.redComponent - red.greenComponent, 0.8)
-            XCTAssertGreaterThan(blue.blueComponent - blue.redComponent, 0.8)
-            XCTAssertGreaterThan(green.greenComponent - green.redComponent, 0.7)
+        for (image, surface) in [(thumbnail, "miniatura"), (exported, "exportação")] {
+            try checkLayers(in: image, size: CGSize(width: 500, height: 400),
+                            convert: { $0.applying(transform) }, surface: surface)
         }
         let otherPage = try XCTUnwrap(export.page(at: 0))
         let blank = otherPage.thumbnail(of: CGSize(width: 224, height: 296), for: .mediaBox)
         let center = try pixel(in: blank, at: CGPoint(x: 200, y: 250), width: 400, height: 500)
         XCTAssertGreaterThan(center.greenComponent, 0.95)
         XCTAssertGreaterThan(center.blueComponent, 0.95)
-    }
-
-    @MainActor
-    func testPDFKitOverlayPaintsImageInPageCoordinatesAtZoom() throws {
-        _ = NSApplication.shared
-        let (model, context) = TestSupport.makeInMemoryViewModel()
-        model.addNote(title: "Imagem no canvas")
-        let note = try XCTUnwrap(model.selectedNote)
-        note.pdfData = try pdfData()
-        note.pageCount = 2
-        try context.save()
-        try model.insertEditorImage(data: imageData(), into: note, pageIndex: 1)
-        let document = try XCTUnwrap(model.getPDFDocument(for: note))
-        let page = try XCTUnwrap(document.page(at: 1))
-
-        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 720, height: 600),
-                              styleMask: [.titled], backing: .buffered, defer: false)
-        let pdfView = PDFView()
-        let tools = CanvasViewModel()
-        let provider = AnnotatedPDFOverlayProvider(noteVM: model, canvasVM: tools)
-        window.contentView = pdfView
-        pdfView.displayMode = .singlePage
-        pdfView.displayBox = .mediaBox
-        pdfView.pageOverlayViewProvider = provider
-        pdfView.document = document
-        pdfView.go(to: page)
-        pdfView.scaleFactor = 0.8
-        pdfView.layoutDocumentView()
-        window.displayIfNeeded()
-
-        let overlay = try XCTUnwrap(provider.pdfView(pdfView, overlayViewFor: page) as? PageDrawingCanvas)
-        XCTAssertTrue(overlay.window === window)
-        let bitmap = try XCTUnwrap(overlay.bitmapImageRepForCachingDisplay(in: overlay.bounds))
-        overlay.cacheDisplay(in: overlay.bounds, to: bitmap)
-        let image = NSImage(size: overlay.bounds.size)
-        image.addRepresentation(bitmap)
-        let redPoint = overlay.convert(pdfView.convert(CGPoint(x: 280, y: 360), from: page), from: pdfView)
-        let bluePoint = overlay.convert(pdfView.convert(CGPoint(x: 200, y: 280), from: page), from: pdfView)
-        let red = try pixel(in: image, at: redPoint, width: overlay.bounds.width, height: overlay.bounds.height)
-        let blue = try pixel(in: image, at: bluePoint, width: overlay.bounds.width, height: overlay.bounds.height)
-        XCTAssertGreaterThan(red.redComponent - red.greenComponent, 0.8)
-        XCTAssertGreaterThan(blue.blueComponent - blue.redComponent, 0.8)
     }
 
     private func pixel(in image: NSImage, at point: CGPoint, width: CGFloat, height: CGFloat) throws -> NSColor {

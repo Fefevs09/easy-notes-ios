@@ -18,7 +18,7 @@ func deserializeStrokePoints(_ str: String) -> [CGPoint] {
 }
 
 /// Draws every Stroke belonging to `note` on `pageIndex` directly into `context`,
-/// in the page's mediaBox coordinate space for thumbnails and PDF export.
+/// in the local coordinate space of the page overlay.
 func renderStrokes(for note: Note, pageIndex: Int, into context: CGContext) {
     let strokesSet = note.strokes as? Set<Stroke> ?? []
     let pageStrokes = strokesSet.filter { $0.pageIndex == Int16(pageIndex) }
@@ -44,6 +44,17 @@ func renderStrokes(for note: Note, pageIndex: Int, into context: CGContext) {
         }
         context.strokePath()
     }
+    context.restoreGState()
+}
+
+/// Renders saved drawings into a context in native PDF page coordinates.
+func renderPageDrawings(for note: Note, pageIndex: Int, mediaBox: CGRect, into context: CGContext) {
+    // PDFKit's overlay uses unrotated page points relative to the media box's
+    // lower-left corner. The caller's CTM already applies the page rotation.
+    context.saveGState()
+    context.translateBy(x: mediaBox.minX, y: mediaBox.minY)
+    renderShapes(for: note, pageIndex: pageIndex, into: context)
+    renderStrokes(for: note, pageIndex: pageIndex, into: context)
     context.restoreGState()
 }
 

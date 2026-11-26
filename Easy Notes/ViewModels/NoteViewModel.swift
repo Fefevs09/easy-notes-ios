@@ -555,8 +555,7 @@ public class NoteViewModel: ObservableObject {
                 renderGrid(for: note, in: mediaBox, into: context)
             }
             renderEditorImages(for: note, pageIndex: pageIndex, into: context)
-            renderShapes(for: note, pageIndex: pageIndex, into: context)
-            renderStrokes(for: note, pageIndex: pageIndex, into: context)
+            renderPageDrawings(for: note, pageIndex: pageIndex, mediaBox: mediaBox, into: context)
             context.restoreGState()
             context.endPage()
         }
