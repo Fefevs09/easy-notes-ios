@@ -7,11 +7,14 @@ final class WelcomeStateTests: XCTestCase {
     func testFreshInstallKeepsWelcomeAcrossRelaunchUntilCompletion() throws {
         try withInstallation { directory, defaults in
             let firstLaunch = WelcomeState(defaults: defaults)
+            let noteCount: Int
             do {
                 let stack = CoreDataStack(defaults: defaults, welcome: firstLaunch, defaultStoreDirectory: directory)
                 XCTAssertTrue(firstLaunch.showsWelcome)
+                XCTAssertNil(firstLaunch.tutorialStep)
                 let viewModel = NoteViewModel(context: stack.viewContext)
                 XCTAssertFalse(viewModel.notebooks.isEmpty)
+                noteCount = try stack.viewContext.count(for: NSFetchRequest<Note>(entityName: "Note"))
             }
 
             let secondLaunch = WelcomeState(defaults: defaults)
@@ -22,12 +25,74 @@ final class WelcomeStateTests: XCTestCase {
                 secondLaunch.complete()
                 secondLaunch.complete()
                 XCTAssertFalse(secondLaunch.showsWelcome)
+                XCTAssertEqual(try stack.viewContext.count(for: NSFetchRequest<Note>(entityName: "Note")), noteCount)
             }
 
             AppSettingsStore(defaults: defaults).resetAll()
             let completedLaunch = WelcomeState(defaults: defaults)
             _ = CoreDataStack(defaults: defaults, welcome: completedLaunch, defaultStoreDirectory: directory)
             XCTAssertFalse(completedLaunch.showsWelcome)
+            XCTAssertEqual(completedLaunch.tutorialStep, .notebooks)
+        }
+    }
+
+    func testTutorialResumesAtSavedStepAndWaitsForAnOpenNoteToFinish() throws {
+        try withInstallation { _, defaults in
+            let firstLaunch = WelcomeState(defaults: defaults)
+            firstLaunch.prepare(hasExistingInstallation: false)
+            firstLaunch.complete()
+            firstLaunch.advanceTutorial(from: .notebooks, hasOpenNote: false)
+            firstLaunch.complete()
+            firstLaunch.advanceTutorial(from: .notebooks, hasOpenNote: false)
+            XCTAssertEqual(firstLaunch.tutorialStep, .search)
+
+            let resumed = WelcomeState(defaults: defaults)
+            resumed.prepare(hasExistingInstallation: true)
+            XCTAssertEqual(resumed.tutorialStep, .search)
+            resumed.advanceTutorial(from: .search, hasOpenNote: false)
+            XCTAssertEqual(resumed.tutorialStep, .newNote)
+            resumed.advanceTutorial(from: .newNote, hasOpenNote: false)
+            resumed.advanceTutorial(from: .editorTools, hasOpenNote: false)
+            XCTAssertEqual(resumed.tutorialStep, .editorTools)
+
+            let editorLaunch = WelcomeState(defaults: defaults)
+            editorLaunch.prepare(hasExistingInstallation: true)
+            XCTAssertEqual(editorLaunch.tutorialStep, .editorTools)
+            editorLaunch.advanceTutorial(from: .editorTools, hasOpenNote: true)
+            XCTAssertNil(editorLaunch.tutorialStep)
+
+            let finished = WelcomeState(defaults: defaults)
+            finished.prepare(hasExistingInstallation: true)
+            XCTAssertNil(finished.tutorialStep)
+        }
+    }
+
+    func testSkippingTutorialPersistsAcrossRelaunch() throws {
+        try withInstallation { _, defaults in
+            let welcome = WelcomeState(defaults: defaults)
+            welcome.prepare(hasExistingInstallation: false)
+            welcome.complete()
+            welcome.advanceTutorial(from: .notebooks, hasOpenNote: false)
+            welcome.skipTutorial(from: .notebooks)
+            XCTAssertEqual(welcome.tutorialStep, .search)
+            welcome.skipTutorial(from: .search)
+            XCTAssertNil(welcome.tutorialStep)
+
+            let relaunched = WelcomeState(defaults: defaults)
+            relaunched.prepare(hasExistingInstallation: true)
+            XCTAssertFalse(relaunched.showsWelcome)
+            XCTAssertNil(relaunched.tutorialStep)
+        }
+    }
+
+    func testInstallThatAlreadyCompletedWelcomeDoesNotStartTutorial() throws {
+        try withInstallation { _, defaults in
+            defaults.set("completed", forKey: "easyNotes.welcome.status")
+            let welcome = WelcomeState(defaults: defaults)
+            welcome.prepare(hasExistingInstallation: true)
+            welcome.complete()
+            XCTAssertFalse(welcome.showsWelcome)
+            XCTAssertNil(welcome.tutorialStep)
         }
     }
 
@@ -57,6 +122,7 @@ final class WelcomeStateTests: XCTestCase {
             let welcome = WelcomeState(defaults: defaults)
             let stack = CoreDataStack(defaults: defaults, welcome: welcome, defaultStoreDirectory: directory)
             XCTAssertFalse(welcome.showsWelcome)
+            XCTAssertNil(welcome.tutorialStep)
             XCTAssertEqual(try stack.viewContext.count(for: NSFetchRequest<Note>(entityName: "Note")), 0)
         }
     }

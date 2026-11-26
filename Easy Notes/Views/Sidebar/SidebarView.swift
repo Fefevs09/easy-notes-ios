@@ -117,6 +117,7 @@ struct SidebarView: View {
                         }
                         .padding(.horizontal, 10)
                         .padding(.bottom, 2)
+                        .tutorialAnchor(.notebooks, arrowEdge: .trailing)
 
                         if viewModel.notebooks.isEmpty {
                             Text("Nenhum caderno ainda")

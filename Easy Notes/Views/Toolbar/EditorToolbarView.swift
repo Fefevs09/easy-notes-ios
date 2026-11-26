@@ -78,6 +78,7 @@ struct EditorToolbarView: View {
                     canvasVM.selectTool(isPenTool ? canvasVM.activeTool : .fountainPen)
                 }
             }
+            .tutorialAnchor(.editorTools)
 
             primaryTool("Marca-texto", icon: "highlighter", isSelected: contextualTool == .highlighter) {
                 isShapePopoverPresented = false

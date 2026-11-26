@@ -215,6 +215,7 @@ struct NotesView: View {
                         .shadow(color: PixelTheme.accent.opacity(0.25), radius: 6, x: 0, y: 2)
                     }
                     .buttonStyle(.plain)
+                    .tutorialAnchor(.newNote)
                 }
             } else if !viewModel.notes.isEmpty {
                 Button(action: {
@@ -294,6 +295,8 @@ struct NotesView: View {
                     .strokeBorder(isSearchFocused ? PixelTheme.accentBorder : PixelTheme.border, lineWidth: isSearchFocused ? 1.5 : 1)
             )
             .shadow(color: Color.black.opacity(0.025), radius: 3, x: 0, y: 1)
+
+            .tutorialAnchor(.search)
 
             // Hidden shortcut button so ⌘K focuses search cleanly
             Button("") {
