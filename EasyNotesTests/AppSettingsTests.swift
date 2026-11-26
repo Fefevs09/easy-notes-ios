@@ -79,6 +79,38 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertEqual(reloaded.surfaceOpacity, AppSettingsStore.surfaceOpacityRange.lowerBound, accuracy: 0.0001)
     }
 
+    func testLegacyThemeIDsStillLoad() {
+        let legacyPresets: [(String, AppThemePreset)] = [
+            ("editorial", .editorial), ("sage", .sage), ("terracotta", .terracotta),
+            ("ocean", .ocean), ("amber", .amber)
+        ]
+
+        for (id, preset) in legacyPresets {
+            isolatedDefaults.set(id, forKey: AppSettingsStore.Keys.themePreset)
+            XCTAssertEqual(preset.id, id)
+            XCTAssertEqual(AppSettingsStore(defaults: isolatedDefaults).themePreset, preset)
+        }
+    }
+
+    func testNewThemePresetsPersistAcrossAppearanceModes() {
+        let newPresets: [(AppThemePreset, String)] = [
+            (.lavender, "lavender"), (.graphite, "graphite"), (.raspberry, "raspberry")
+        ]
+        let store = AppSettingsStore(defaults: isolatedDefaults)
+
+        for mode in AppAppearanceMode.allCases {
+            store.appearanceMode = mode
+            for (preset, id) in newPresets {
+                store.themePreset = preset
+                XCTAssertEqual(isolatedDefaults.string(forKey: AppSettingsStore.Keys.themePreset), id)
+
+                let reloaded = AppSettingsStore(defaults: isolatedDefaults)
+                XCTAssertEqual(reloaded.themePreset, preset)
+                XCTAssertEqual(reloaded.appearanceMode, mode)
+            }
+        }
+    }
+
     func testPenPresetEditingValidationAndReset() {
         let store = AppSettingsStore(defaults: isolatedDefaults)
         XCTAssertEqual(store.penPresets.count, 5)

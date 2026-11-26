@@ -43,6 +43,9 @@ public enum AppThemePreset: String, CaseIterable, Identifiable, Codable {
     case terracotta
     case ocean
     case amber
+    case lavender
+    case graphite
+    case raspberry
 
     public var id: String { rawValue }
 
@@ -53,6 +56,9 @@ public enum AppThemePreset: String, CaseIterable, Identifiable, Codable {
         case .terracotta: return "Terracota"
         case .ocean: return "Oceano"
         case .amber: return "Âmbar"
+        case .lavender: return "Lavanda"
+        case .graphite: return "Grafite"
+        case .raspberry: return "Framboesa"
         }
     }
 
@@ -68,6 +74,12 @@ public enum AppThemePreset: String, CaseIterable, Identifiable, Codable {
             return NSColor(srgbRed: 0.176, green: 0.463, blue: 0.678, alpha: 1.0) // #2D76AD
         case .amber:
             return NSColor(srgbRed: 0.761, green: 0.506, blue: 0.141, alpha: 1.0) // #C28124
+        case .lavender:
+            return NSColor(srgbRed: 0.502, green: 0.333, blue: 0.651, alpha: 1.0)
+        case .graphite:
+            return NSColor(srgbRed: 0.329, green: 0.361, blue: 0.404, alpha: 1.0)
+        case .raspberry:
+            return NSColor(srgbRed: 0.663, green: 0.220, blue: 0.384, alpha: 1.0)
         }
     }
 
@@ -83,6 +95,12 @@ public enum AppThemePreset: String, CaseIterable, Identifiable, Codable {
             return NSColor(srgbRed: 0.420, green: 0.690, blue: 0.890, alpha: 1.0) // #6BB0E3
         case .amber:
             return NSColor(srgbRed: 0.929, green: 0.710, blue: 0.345, alpha: 1.0) // #EDB558
+        case .lavender:
+            return NSColor(srgbRed: 0.765, green: 0.620, blue: 0.875, alpha: 1.0)
+        case .graphite:
+            return NSColor(srgbRed: 0.690, green: 0.729, blue: 0.784, alpha: 1.0)
+        case .raspberry:
+            return NSColor(srgbRed: 0.925, green: 0.545, blue: 0.678, alpha: 1.0)
         }
     }
 
@@ -98,6 +116,12 @@ public enum AppThemePreset: String, CaseIterable, Identifiable, Codable {
             return NSColor(srgbRed: 0.129, green: 0.369, blue: 0.557, alpha: 1.0) // #215E8E
         case .amber:
             return NSColor(srgbRed: 0.627, green: 0.404, blue: 0.098, alpha: 1.0) // #A06719
+        case .lavender:
+            return NSColor(srgbRed: 0.404, green: 0.247, blue: 0.537, alpha: 1.0)
+        case .graphite:
+            return NSColor(srgbRed: 0.259, green: 0.286, blue: 0.329, alpha: 1.0)
+        case .raspberry:
+            return NSColor(srgbRed: 0.545, green: 0.161, blue: 0.306, alpha: 1.0)
         }
     }
 
@@ -113,6 +137,12 @@ public enum AppThemePreset: String, CaseIterable, Identifiable, Codable {
             return NSColor(srgbRed: 0.549, green: 0.780, blue: 0.945, alpha: 1.0)
         case .amber:
             return NSColor(srgbRed: 0.961, green: 0.792, blue: 0.490, alpha: 1.0)
+        case .lavender:
+            return NSColor(srgbRed: 0.831, green: 0.710, blue: 0.922, alpha: 1.0)
+        case .graphite:
+            return NSColor(srgbRed: 0.784, green: 0.812, blue: 0.847, alpha: 1.0)
+        case .raspberry:
+            return NSColor(srgbRed: 0.961, green: 0.667, blue: 0.765, alpha: 1.0)
         }
     }
 
@@ -128,6 +158,12 @@ public enum AppThemePreset: String, CaseIterable, Identifiable, Codable {
             return NSColor(srgbRed: 0.898, green: 0.941, blue: 0.976, alpha: 1.0) // #E5F0F9
         case .amber:
             return NSColor(srgbRed: 0.980, green: 0.945, blue: 0.882, alpha: 1.0) // #FAF1E1
+        case .lavender:
+            return NSColor(srgbRed: 0.941, green: 0.906, blue: 0.965, alpha: 1.0)
+        case .graphite:
+            return NSColor(srgbRed: 0.914, green: 0.925, blue: 0.941, alpha: 1.0)
+        case .raspberry:
+            return NSColor(srgbRed: 0.980, green: 0.902, blue: 0.933, alpha: 1.0)
         }
     }
 
@@ -143,6 +179,12 @@ public enum AppThemePreset: String, CaseIterable, Identifiable, Codable {
             return NSColor(srgbRed: 0.145, green: 0.235, blue: 0.314, alpha: 1.0)
         case .amber:
             return NSColor(srgbRed: 0.298, green: 0.235, blue: 0.133, alpha: 1.0)
+        case .lavender:
+            return NSColor(srgbRed: 0.239, green: 0.169, blue: 0.310, alpha: 1.0)
+        case .graphite:
+            return NSColor(srgbRed: 0.180, green: 0.200, blue: 0.231, alpha: 1.0)
+        case .raspberry:
+            return NSColor(srgbRed: 0.322, green: 0.149, blue: 0.220, alpha: 1.0)
         }
     }
 
@@ -158,6 +200,12 @@ public enum AppThemePreset: String, CaseIterable, Identifiable, Codable {
             return NSColor(srgbRed: 0.541, green: 0.725, blue: 0.871, alpha: 1.0)
         case .amber:
             return NSColor(srgbRed: 0.878, green: 0.710, blue: 0.447, alpha: 1.0)
+        case .lavender:
+            return NSColor(srgbRed: 0.741, green: 0.620, blue: 0.820, alpha: 1.0)
+        case .graphite:
+            return NSColor(srgbRed: 0.663, green: 0.698, blue: 0.749, alpha: 1.0)
+        case .raspberry:
+            return NSColor(srgbRed: 0.851, green: 0.565, blue: 0.682, alpha: 1.0)
         }
     }
 
@@ -173,6 +221,12 @@ public enum AppThemePreset: String, CaseIterable, Identifiable, Codable {
             return NSColor(srgbRed: 0.298, green: 0.525, blue: 0.706, alpha: 1.0)
         case .amber:
             return NSColor(srgbRed: 0.698, green: 0.514, blue: 0.239, alpha: 1.0)
+        case .lavender:
+            return NSColor(srgbRed: 0.580, green: 0.424, blue: 0.698, alpha: 1.0)
+        case .graphite:
+            return NSColor(srgbRed: 0.455, green: 0.502, blue: 0.569, alpha: 1.0)
+        case .raspberry:
+            return NSColor(srgbRed: 0.722, green: 0.349, blue: 0.494, alpha: 1.0)
         }
     }
 
