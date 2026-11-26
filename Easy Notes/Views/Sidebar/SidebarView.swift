@@ -27,6 +27,8 @@ struct SidebarView: View {
     @State private var notebookToDelete: Notebook? = nil
 
     @State private var hoveredItem: String? = nil
+    @FocusState private var isAddNotebookFocused: Bool
+    @AccessibilityFocusState private var isAddNotebookAccessibilityFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
@@ -110,6 +112,10 @@ struct SidebarView: View {
                                     .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
+                            .focusable()
+                            .focused($isAddNotebookFocused)
+                            .accessibilityFocused($isAddNotebookAccessibilityFocused)
+                            .accessibilityLabel("Novo Caderno")
                             .help("Novo Caderno")
                             .onHover { hovering in
                                 hoveredItem = hovering ? "add-notebook" : (hoveredItem == "add-notebook" ? nil : hoveredItem)
@@ -117,7 +123,10 @@ struct SidebarView: View {
                         }
                         .padding(.horizontal, 10)
                         .padding(.bottom, 2)
-                        .tutorialAnchor(.notebooks, arrowEdge: .trailing)
+                        .tutorialAnchor(.notebooks, arrowEdge: .trailing) {
+                            isAddNotebookFocused = true
+                            isAddNotebookAccessibilityFocused = true
+                        }
 
                         if viewModel.notebooks.isEmpty {
                             Text("Nenhum caderno ainda")

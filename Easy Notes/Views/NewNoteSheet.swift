@@ -13,13 +13,19 @@ struct NewNoteDraft {
         )
     }
 
-    func create(in model: NoteViewModel) {
+    @discardableResult
+    func create(in model: NoteViewModel) -> Bool {
+        let beforeID = model.selectedNote?.id
         let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
         model.addNote(title: name.isEmpty ? "Nova Nota" : name, paper: paper, orientation: orientation)
+        guard let created = model.selectedNote else { return false }
+        return created.id != beforeID && !created.objectID.isTemporaryID
     }
 }
 
 struct NewNoteSheet: View {
+    var onCreated: ((Bool) -> Void)? = nil
+
     @EnvironmentObject private var viewModel: NoteViewModel
     @Environment(\.dismiss) private var dismiss
     @State private var draft = NewNoteDraft.fromSettings()
@@ -66,8 +72,9 @@ struct NewNoteSheet: View {
                 Button("Cancelar") { dismiss() }
                     .keyboardShortcut(.cancelAction)
                 Button("Criar nota") {
+                    let created = draft.create(in: viewModel)
+                    onCreated?(created)
                     dismiss()
-                    draft.create(in: viewModel)
                 }
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent)

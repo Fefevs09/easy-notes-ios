@@ -28,7 +28,11 @@ struct Easy_NotesApp: App {
                         welcome.complete()
                     }
                 } else {
-                    TutorialWorkspace(welcome: welcome, hasOpenNote: viewModel.selectedNote != nil) {
+                    TutorialWorkspace(
+                        welcome: welcome,
+                        hasOpenNote: viewModel.selectedNote != nil,
+                        isInTrash: viewModel.selectedFilter == .trash
+                    ) {
                         ContentView()
                     }
                 }

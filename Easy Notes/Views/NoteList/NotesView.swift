@@ -12,10 +12,14 @@ struct NotesView: View {
     }
 
     @EnvironmentObject var viewModel: NoteViewModel
+    @Environment(\.tutorial) private var tutorial
     @State private var isCreatingNote = false
 
     @AppStorage("easyNotes.libraryIsGridView") private var isGridView = true
     @FocusState private var isSearchFocused: Bool
+    @AccessibilityFocusState private var isSearchAccessibilityFocused: Bool
+    @FocusState private var isNewNoteFocused: Bool
+    @AccessibilityFocusState private var isNewNoteAccessibilityFocused: Bool
     @FocusState private var focusedMenuTriggerNoteID: UUID?
     @State private var activeMenuNoteID: UUID?
     @State private var pendingPanelFocusRestoreNoteID: UUID?
@@ -28,59 +32,76 @@ struct NotesView: View {
     ]
 
     var body: some View {
+        mainContentWithPresentation
+            .onChange(of: viewModel.selectedFilter) { _, _ in
+                closeMenu(restoreFocus: false)
+            }
+            .onChange(of: viewModel.searchQuery) { _, _ in
+                closeMenu(restoreFocus: false)
+            }
+            .onChange(of: viewModel.selectedNote) { _, _ in
+                closeMenu(restoreFocus: false)
+            }
+            .onChange(of: isGridView) { _, _ in
+                closeMenu(restoreFocus: false)
+            }
+            .onChange(of: isSearchFocused) { _, focused in
+                if focused {
+                    closeMenu(restoreFocus: false)
+                }
+            }
+            .onChange(of: viewModel.notes) { _, notes in
+                if let activeID = activeMenuNoteID,
+                   !notes.contains(where: { $0.id == activeID }) {
+                    closeMenu(restoreFocus: false)
+                }
+            }
+            .onChange(of: activeMenuNoteID) { oldID, newID in
+                handleActiveMenuChange(oldID: oldID, newID: newID)
+            }
+    }
+
+    private var mainContentWithPresentation: some View {
+        mainContent
+            .sheet(isPresented: $isCreatingNote, onDismiss: {
+                tutorial?.cancelNewNoteCreation()
+            }) {
+                NewNoteSheet { created in
+                    tutorial?.completeNewNoteCreation(created)
+                }
+            }
+            .alert(item: $actionAlert) { alert in
+                Alert(
+                    title: Text(alert.title),
+                    message: Text(alert.message),
+                    dismissButton: .default(Text("OK"))
+                )
+            }
+    }
+
+    private func handleActiveMenuChange(oldID: UUID?, newID: UUID?) {
+        let shouldSuppress = suppressNextFocusRestore
+        suppressNextFocusRestore = false
+        guard !shouldSuppress,
+              newID == nil,
+              let closedNoteID = oldID,
+              pendingPanelFocusRestoreNoteID != closedNoteID else {
+            return
+        }
+        restoreFocusToTrigger(for: closedNoteID)
+    }
+
+    private var mainContent: some View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    // MARK: - Editorial Header
                     editorialHeader
-
-                    // MARK: - Search Bar & View Toggle
                     searchAndToggleRow
-
-                    // MARK: - Quick-Filter Notebook Chips
                     if viewModel.selectedFilter != .trash && !viewModel.notebooks.isEmpty {
                         notebookChipsRow
                     }
-
-                    // MARK: - Section Header & Sort Menu
                     sectionHeaderRow
-
-                    // MARK: - Notes Content (Empty / Grid / List)
-                    if viewModel.notes.isEmpty {
-                        emptyStateView
-                    } else if isGridView {
-                        LazyVGrid(columns: columns, spacing: 20) {
-                            ForEach(viewModel.notes, id: \.self) { note in
-                                NoteCardView(
-                                    note: note,
-                                    coverCache: viewModel.coverCache,
-                                    isMenuPresented: menuPresentedBinding(for: note),
-                                    focusedMenuTriggerNoteID: $focusedMenuTriggerNoteID,
-                                    onOpenNote: { openNote(note) },
-                                    onToggleMenu: { toggleMenu(for: note) },
-                                    onOpenMenu: { openMenu(for: note) }
-                                ) {
-                                    actionMenuPopover(for: note)
-                                }
-                            }
-                        }
-                    } else {
-                        LazyVStack(spacing: 10) {
-                            ForEach(viewModel.notes, id: \.self) { note in
-                                NoteListRowCardView(
-                                    note: note,
-                                    coverCache: viewModel.coverCache,
-                                    isMenuPresented: menuPresentedBinding(for: note),
-                                    focusedMenuTriggerNoteID: $focusedMenuTriggerNoteID,
-                                    onOpenNote: { openNote(note) },
-                                    onToggleMenu: { toggleMenu(for: note) },
-                                    onOpenMenu: { openMenu(for: note) }
-                                ) {
-                                    actionMenuPopover(for: note)
-                                }
-                            }
-                        }
-                    }
+                    notesCollectionContent
                 }
                 .padding(.horizontal, 32)
                 .padding(.top, 36)
@@ -88,7 +109,13 @@ struct NotesView: View {
             }
             .background(PixelTheme.surface)
 
-            // MARK: - Subtle Bottom Status Footer
+            bottomStatusFooter
+        }
+        .background(PixelTheme.surface)
+    }
+
+    private var bottomStatusFooter: some View {
+        VStack(spacing: 0) {
             Rectangle()
                 .fill(PixelTheme.border)
                 .frame(height: 1)
@@ -109,48 +136,44 @@ struct NotesView: View {
             .padding(.vertical, 10)
             .background(PixelTheme.surface)
         }
-        .background(PixelTheme.surface)
-        .sheet(isPresented: $isCreatingNote) { NewNoteSheet() }
-        .onChange(of: viewModel.selectedFilter) { _, _ in
-            closeMenu(restoreFocus: false)
-        }
-        .onChange(of: viewModel.searchQuery) { _, _ in
-            closeMenu(restoreFocus: false)
-        }
-        .onChange(of: viewModel.selectedNote) { _, _ in
-            closeMenu(restoreFocus: false)
-        }
-        .onChange(of: isGridView) { _, _ in
-            closeMenu(restoreFocus: false)
-        }
-        .onChange(of: isSearchFocused) { _, focused in
-            if focused {
-                closeMenu(restoreFocus: false)
+    }
+
+    @ViewBuilder
+    private var notesCollectionContent: some View {
+        if viewModel.notes.isEmpty {
+            emptyStateView
+        } else if isGridView {
+            LazyVGrid(columns: columns, spacing: 20) {
+                ForEach(viewModel.notes, id: \.self) { note in
+                    NoteCardView(
+                        note: note,
+                        coverCache: viewModel.coverCache,
+                        isMenuPresented: menuPresentedBinding(for: note),
+                        focusedMenuTriggerNoteID: $focusedMenuTriggerNoteID,
+                        onOpenNote: { openNote(note) },
+                        onToggleMenu: { toggleMenu(for: note) },
+                        onOpenMenu: { openMenu(for: note) }
+                    ) {
+                        actionMenuPopover(for: note)
+                    }
+                }
             }
-        }
-        .onChange(of: viewModel.notes) { _, notes in
-            if let activeID = activeMenuNoteID,
-               !notes.contains(where: { $0.id == activeID }) {
-                closeMenu(restoreFocus: false)
+        } else {
+            LazyVStack(spacing: 10) {
+                ForEach(viewModel.notes, id: \.self) { note in
+                    NoteListRowCardView(
+                        note: note,
+                        coverCache: viewModel.coverCache,
+                        isMenuPresented: menuPresentedBinding(for: note),
+                        focusedMenuTriggerNoteID: $focusedMenuTriggerNoteID,
+                        onOpenNote: { openNote(note) },
+                        onToggleMenu: { toggleMenu(for: note) },
+                        onOpenMenu: { openMenu(for: note) }
+                    ) {
+                        actionMenuPopover(for: note)
+                    }
+                }
             }
-        }
-        .onChange(of: activeMenuNoteID) { oldID, newID in
-            let shouldSuppress = suppressNextFocusRestore
-            suppressNextFocusRestore = false
-            guard !shouldSuppress,
-                  newID == nil,
-                  let closedNoteID = oldID,
-                  pendingPanelFocusRestoreNoteID != closedNoteID else {
-                return
-            }
-            restoreFocusToTrigger(for: closedNoteID)
-        }
-        .alert(item: $actionAlert) { alert in
-            Alert(
-                title: Text(alert.title),
-                message: Text(alert.message),
-                dismissButton: .default(Text("OK"))
-            )
         }
     }
 
@@ -197,6 +220,7 @@ struct NotesView: View {
                     .buttonStyle(.plain)
 
                     Button(action: {
+                        tutorial?.beginNewNoteCreation()
                         isCreatingNote = true
                     }) {
                         HStack(spacing: 6) {
@@ -215,7 +239,13 @@ struct NotesView: View {
                         .shadow(color: PixelTheme.accent.opacity(0.25), radius: 6, x: 0, y: 2)
                     }
                     .buttonStyle(.plain)
-                    .tutorialAnchor(.newNote)
+                    .focusable()
+                    .focused($isNewNoteFocused)
+                    .accessibilityFocused($isNewNoteAccessibilityFocused)
+                    .tutorialAnchor(.newNote) {
+                        isNewNoteFocused = true
+                        isNewNoteAccessibilityFocused = true
+                    }
                 }
             } else if !viewModel.notes.isEmpty {
                 Button(action: {
@@ -257,6 +287,7 @@ struct NotesView: View {
                     .font(PixelTheme.uiFont(size: 13.5))
                     .foregroundColor(PixelTheme.ink)
                     .focused($isSearchFocused)
+                    .accessibilityFocused($isSearchAccessibilityFocused)
 
                 if !viewModel.searchQuery.isEmpty {
                     Button(action: {
@@ -296,7 +327,10 @@ struct NotesView: View {
             )
             .shadow(color: Color.black.opacity(0.025), radius: 3, x: 0, y: 1)
 
-            .tutorialAnchor(.search)
+            .tutorialAnchor(.search) {
+                isSearchFocused = true
+                isSearchAccessibilityFocused = true
+            }
 
             // Hidden shortcut button so ⌘K focuses search cleanly
             Button("") {
