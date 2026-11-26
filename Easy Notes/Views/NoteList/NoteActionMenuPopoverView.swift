@@ -637,7 +637,7 @@ struct NoteActionMenuPopoverView: View {
                     Button(action: commitRename) {
                         Text("Salvar")
                             .font(PixelTheme.uiFont(size: 11.5, weight: .semibold))
-                            .foregroundStyle(hasUnsavedTitleChanges ? .white : PixelTheme.muted)
+                            .foregroundStyle(hasUnsavedTitleChanges ? PixelTheme.onAccent : PixelTheme.muted)
                             .padding(.horizontal, 10)
                             .frame(height: 30)
                             .background(

@@ -84,6 +84,11 @@ enum PixelTheme {
     )
 
     // MARK: - Brand & Semantic Accents (Dynamic with AppThemePreset via @Observable ThemeAppearanceState)
+    static var onAccent: Color {
+        let light = ThemeAppearanceState.shared.themePreset == .amber ? NSColor.black : NSColor.white
+        return dynamicColor(light: light, dark: .black)
+    }
+
     static var accent: Color {
         let preset = ThemeAppearanceState.shared.themePreset
         return dynamicColor(light: preset.lightAccentNSColor, dark: preset.darkAccentNSColor)

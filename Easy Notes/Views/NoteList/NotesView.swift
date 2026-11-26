@@ -205,7 +205,7 @@ struct NotesView: View {
                             Text("Nova nota")
                                 .font(PixelTheme.uiFont(size: 13, weight: .semibold))
                         }
-                        .foregroundColor(.white)
+                        .foregroundColor(PixelTheme.onAccent)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 9)
                         .background(
@@ -406,7 +406,7 @@ struct NotesView: View {
 
                             Text("\(notebook.activeNotesCount)")
                                 .font(PixelTheme.uiFont(size: 11.5, weight: .medium))
-                                .foregroundColor(isActive ? PixelTheme.accent.opacity(0.85) : PixelTheme.muted)
+                                .foregroundColor(isActive ? PixelTheme.accent : PixelTheme.muted)
                                 .monospacedDigit()
                         }
                         .padding(.horizontal, 12)
