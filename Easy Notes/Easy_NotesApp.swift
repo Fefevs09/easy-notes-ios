@@ -28,7 +28,13 @@ struct Easy_NotesApp: App {
                         welcome.complete()
                     }
                 } else {
-                    ContentView()
+                    TutorialWorkspace(
+                        welcome: welcome,
+                        hasOpenNote: viewModel.selectedNote != nil,
+                        isInTrash: viewModel.selectedFilter == .trash
+                    ) {
+                        ContentView()
+                    }
                 }
             }
             .frame(minWidth: 920, minHeight: 600)

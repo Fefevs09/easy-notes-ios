@@ -17,6 +17,8 @@ struct EditorToolbarView: View {
     @State private var isColorPopoverPresented = false
     @State private var isShapePopoverPresented = false
     @FocusState private var isShapeTriggerFocused: Bool
+    @FocusState private var isPenToolFocused: Bool
+    @AccessibilityFocusState private var isPenToolAccessibilityFocused: Bool
     @State private var hoveredPresetName: String? = nil
 
     private var isPenTool: Bool {
@@ -95,6 +97,13 @@ struct EditorToolbarView: View {
                 if !canvasVM.isDrawingMode || !isPenTool {
                     canvasVM.selectTool(isPenTool ? canvasVM.activeTool : .fountainPen)
                 }
+            }
+            .focusable()
+            .focused($isPenToolFocused)
+            .accessibilityFocused($isPenToolAccessibilityFocused)
+            .tutorialAnchor(.editorTools) {
+                isPenToolFocused = true
+                isPenToolAccessibilityFocused = true
             }
 
             primaryTool("Marca-texto", icon: "highlighter", isSelected: contextualTool == .highlighter) {
