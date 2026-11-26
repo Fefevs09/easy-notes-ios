@@ -80,6 +80,13 @@ public enum GridStyle: String, CaseIterable {
     }
 }
 
+public enum CanvasObjectRef: Hashable {
+    case stroke(UUID)
+    case shape(UUID)
+    case image(UUID)
+    case textBlock(UUID)
+}
+
 public class CanvasViewModel: ObservableObject {
     public struct ActiveStroke {
         public var pageIndex: Int
@@ -106,10 +113,42 @@ public class CanvasViewModel: ObservableObject {
     /// marker overlay rather than an opaque stroke.
     public static let highlighterOpacity: CGFloat = 0.3
 
-    // Shape drawing / editing state
+    // Shape & unified object selection state
     @Published public var activeShapeKind: ShapeKind = .line
-    @Published public var selectedShapeID: UUID?
+    @Published public var selectedObjects: Set<CanvasObjectRef> = []
+    @Published public var selectedPageIndexForSelection: Int? = nil
     @Published public var shapeFillEnabled: Bool = false
+
+    public var selectedShapeID: UUID? {
+        get {
+            guard selectedObjects.count == 1,
+                  case .shape(let id)? = selectedObjects.first else {
+                return nil
+            }
+            return id
+        }
+        set {
+            if let id = newValue {
+                selectedObjects = [.shape(id)]
+            } else {
+                clearSelection()
+            }
+        }
+    }
+
+    public func setSelection(_ objects: Set<CanvasObjectRef>, pageIndex: Int?) {
+        selectedObjects = objects
+        selectedPageIndexForSelection = objects.isEmpty ? nil : pageIndex
+    }
+
+    public func clearSelection() {
+        if !selectedObjects.isEmpty {
+            selectedObjects.removeAll()
+        }
+        if selectedPageIndexForSelection != nil {
+            selectedPageIndexForSelection = nil
+        }
+    }
 
     // Store configurations for each tool for premium persistence during toggle
     private var toolWidths: [ToolType: CGFloat] = [
@@ -186,9 +225,14 @@ public class CanvasViewModel: ObservableObject {
             }
         }
 
-        // Clear any active selection when leaving the select tool.
-        if tool != .select {
-            selectedShapeID = nil
+        // Clear active selection when switching to non-pen/non-select tools
+        // (eraser/shape). Switching from select to a pen tool intentionally
+        // preserves the selection so the user can move selected items with the pen.
+        switch tool {
+        case .eraser, .shape:
+            clearSelection()
+        case .select, .fountainPen, .calligraphy, .pencil, .highlighter:
+            break
         }
 
         activeTool = tool
@@ -204,7 +248,7 @@ public class CanvasViewModel: ObservableObject {
     /// over and the custom drawing cursor is no longer shown.
     public func enableReadingMode() {
         isDrawingMode = false
-        selectedShapeID = nil
+        clearSelection()
     }
     
     private func applyToolDefaults() {

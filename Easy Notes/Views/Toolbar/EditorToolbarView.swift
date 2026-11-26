@@ -70,7 +70,9 @@ struct EditorToolbarView: View {
 
             primaryTool("Seleção", icon: "cursorarrow", isSelected: contextualTool == .select) {
                 isShapePopoverPresented = false
-                canvasVM.enableReadingMode()
+                if !canvasVM.isDrawingMode || canvasVM.activeTool != .select {
+                    canvasVM.selectTool(.select)
+                }
             }
 
             primaryTool("Caneta", icon: "pencil.tip", isSelected: canvasVM.isDrawingMode && isPenTool) {
@@ -264,16 +266,20 @@ struct EditorToolbarView: View {
                 segmentButton("Preencher", isSelected: canvasVM.shapeFillEnabled) {
                     canvasVM.shapeFillEnabled.toggle()
                 }
-                segmentButton("Selecionar formas", isSelected: false) {
+                segmentButton("Selecionar objetos", isSelected: false) {
                     canvasVM.selectTool(.select)
                 }
+                .accessibilityLabel("Selecionar objetos")
+                .help("Selecionar e mover anotações, imagens e formas")
                 Spacer(minLength: 0)
 
             case .select:
                 Text("SELEÇÃO").studioSectionHeader().fixedSize()
                 selectionOptions
                 Spacer(minLength: 0)
-                hint("Navegue no documento ou mova formas")
+                hint(canvasVM.isDrawingMode
+                     ? "Selecione e mova anotações, imagens e formas (ou use a caneta sobre a seleção)"
+                     : "Navegue e selecione texto no documento")
             }
         }
         .modifier(ToolbarRow(height: 40, fill: PixelTheme.surface, hairline: 1 / displayScale))
@@ -308,9 +314,14 @@ struct EditorToolbarView: View {
             segmentButton("Leitura", isSelected: !canvasVM.isDrawingMode) {
                 canvasVM.enableReadingMode()
             }
-            segmentButton("Selecionar formas", isSelected: canvasVM.isDrawingMode) {
+            .accessibilityLabel("Modo de leitura")
+            .help("Navegar e selecionar texto do PDF")
+
+            segmentButton("Selecionar objetos", isSelected: canvasVM.isDrawingMode) {
                 canvasVM.selectTool(.select)
             }
+            .accessibilityLabel("Selecionar objetos")
+            .help("Selecionar, redimensionar e mover anotações, imagens e formas")
         }
         .padding(2)
         .modifier(OptionBorder())
