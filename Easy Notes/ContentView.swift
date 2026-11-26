@@ -37,8 +37,12 @@ struct ContentView: View {
         .onChange(of: viewModel.selectedNote?.pageCount) { _, pageCount in
             selectedPageIndex = min(max(0, selectedPageIndex), max(1, Int(pageCount ?? 1)) - 1)
         }
-        .onDisappear { viewModel.flushTitleEdits() }
+        .onDisappear {
+            canvasVM.commitActiveTextEdits()
+            viewModel.flushTitleEdits()
+        }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+            canvasVM.commitActiveTextEdits()
             viewModel.flushTitleEdits()
         }
         .alert("Falha ao renomear nota", isPresented: Binding(
@@ -59,6 +63,8 @@ struct ContentView: View {
             EditorToolbarView(canvasVM: canvasVM, isSidebarOpen: $isSidebarOpen, onInsertImage: {
                 chooseEditorImage(for: note, pageIndex: selectedPageIndex)
             }) {
+                canvasVM.commitActiveTextEdits()
+                canvasVM.clearSelection()
                 viewModel.selectedNote = nil
             }
 
@@ -107,6 +113,8 @@ struct ContentView: View {
     private func editorHeader(for note: Note) -> some View {
         HStack(spacing: 10) {
             Button {
+                canvasVM.commitActiveTextEdits()
+                canvasVM.clearSelection()
                 viewModel.selectedNote = nil
             } label: {
                 EasyNotesBrandMark(compact: true)
@@ -219,6 +227,8 @@ struct ContentView: View {
     }
 
     private func exportPDF(for note: Note) {
+        canvasVM.commitActiveTextEdits()
+        canvasVM.clearSelection()
         PDFExportService.shared.exportPDF(for: note, viewModel: viewModel)
     }
 

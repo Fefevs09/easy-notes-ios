@@ -2,6 +2,12 @@ import CoreData
 
 extension CoreDataStack {
     static func makeModel() -> NSManagedObjectModel {
+        let model = makeEditorImageModel()
+        addTextBlockEntity(to: model)
+        return model
+    }
+
+    static func makeEditorImageModel() -> NSManagedObjectModel {
         let model = makeBaseModel()
         let note = model.entitiesByName["Note"]!
         let image = NSEntityDescription()
@@ -77,6 +83,14 @@ extension CoreDataStack {
         return model
     }
 
+    private static func makeEditorImageSource() -> NSManagedObjectModel {
+        let model = makeEditorImageModel()
+        for entity in model.entities {
+            entity.managedObjectClassName = NSStringFromClass(NSManagedObject.self)
+        }
+        return model
+    }
+
     private static func migrateBaseStoreIfNeeded(at url: URL, to destination: NSManagedObjectModel) throws {
         let files = FileManager.default
         guard files.fileExists(atPath: url.path) else { return }
@@ -91,6 +105,7 @@ extension CoreDataStack {
         let beforeNotebookColor: Set = ["colorHex"]
         let beforeNotebookHierarchy = beforeNotebookColor.union(["colorIndex", "parent", "children"])
         let supportedSources = [
+            makeEditorImageSource(),
             makeHistoricalSource(),
             makeHistoricalSource(missingNotebookFields: beforeNotebookColor),
             makeHistoricalSource(missingNoteFields: beforeGrid),

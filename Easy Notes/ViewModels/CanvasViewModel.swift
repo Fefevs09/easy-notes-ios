@@ -9,6 +9,7 @@ public enum ToolType: String, CaseIterable {
     case highlighter = "Marca-texto"
     case eraser = "Borracha"
     case shape = "Forma"      // draws the currently selected ShapeKind
+    case textBox = "Texto"    // adds/edits free text blocks on the page
     case select = "Selecionar" // selects/moves/resizes existing shapes
 }
 
@@ -151,6 +152,25 @@ public class CanvasViewModel: ObservableObject {
         }
     }
 
+    // Text block tool state
+    @Published public var textFontSize: CGFloat = TextBlockLayout.defaultFontSize
+    @Published public var editingTextBlockID: UUID?
+    @Published public var isTextStylePopoverPresented: Bool = false
+
+    /// Hooks registered by the active `PDFAnnotationCanvasView.Coordinator` so
+    /// toolbar/navigation/export actions can synchronously commit inline text
+    /// edits or restore focus after a style popover closes.
+    public var onCommitActiveTextEdits: (() -> Void)?
+    public var onRestoreTextEditorFocus: (() -> Void)?
+
+    public func commitActiveTextEdits() {
+        onCommitActiveTextEdits?()
+    }
+
+    public func restoreTextEditorFocus() {
+        onRestoreTextEditorFocus?()
+    }
+
     // Store configurations for each tool for premium persistence during toggle
     private var toolWidths: [ToolType: CGFloat] = [
         .fountainPen: 3.0,
@@ -166,7 +186,8 @@ public class CanvasViewModel: ObservableObject {
         .calligraphy: .blue,
         .pencil: .gray,
         .highlighter: .yellow.opacity(CanvasViewModel.highlighterOpacity),
-        .shape: .black
+        .shape: .black,
+        .textBox: Color(nsColor: TextBlockLayout.resolvedTextColor(from: TextBlockLayout.defaultColorHex))
     ]
     
     public var colorToolContext: PenColorToolContext {
@@ -218,19 +239,21 @@ public class CanvasViewModel: ObservableObject {
     
     public func selectTool(_ tool: ToolType) {
         // Save current configurations before switching (select carries no
-        // width/color of its own; eraser has a size but no color).
+        // width/color of its own; eraser has a size but no color; textBox uses textFontSize).
         if activeTool != .select {
-            toolWidths[activeTool] = strokeWidth
+            if activeTool != .textBox {
+                toolWidths[activeTool] = strokeWidth
+            }
             if activeTool != .eraser {
                 toolColors[activeTool] = effectiveColor(strokeColor, for: activeTool)
             }
         }
 
         // Clear active selection when switching to non-pen/non-select tools
-        // (eraser/shape). Switching from select to a pen tool intentionally
+        // (eraser/shape/textBox). Switching from select to a pen tool intentionally
         // preserves the selection so the user can move selected items with the pen.
         switch tool {
-        case .eraser, .shape:
+        case .eraser, .shape, .textBox:
             clearSelection()
         case .select, .fountainPen, .calligraphy, .pencil, .highlighter:
             break

@@ -556,6 +556,7 @@ public class NoteViewModel: ObservableObject {
             }
             renderEditorImages(for: note, pageIndex: pageIndex, into: context)
             renderPageDrawings(for: note, pageIndex: pageIndex, mediaBox: mediaBox, into: context)
+            renderTextBlocks(for: note, pageIndex: pageIndex, into: context)
             context.restoreGState()
             context.endPage()
         }
@@ -607,35 +608,128 @@ public class NoteViewModel: ObservableObject {
         loadNotes()
     }
 
-    /// Number of undoable drawing objects (strokes + shapes) on a note.
+    /// Number of undoable drawing objects (strokes + shapes + text blocks) on a note.
     public func drawnObjectCount(for note: Note?) -> Int {
         guard let note = note else { return 0 }
         let strokes = note.strokes as? Set<Stroke> ?? []
         let shapes = note.shapes as? Set<ShapeObject> ?? []
-        return strokes.count + shapes.count
+        let textBlocks = note.textBlocks as? Set<TextBlock> ?? []
+        return strokes.count + shapes.count + textBlocks.count
     }
 
     /// Removes the most recently created drawing object, whether it is a
-    /// freehand stroke or a geometric shape.
+    /// freehand stroke, geometric shape, or text block.
     public func undoLastObject() {
         guard let note = selectedNote else { return }
         let latestStroke = (note.strokes as? Set<Stroke> ?? [])
             .max(by: { $0.createdAt < $1.createdAt })
         let latestShape = (note.shapes as? Set<ShapeObject> ?? [])
             .max(by: { $0.createdAt < $1.createdAt })
+        let latestTextBlock = (note.textBlocks as? Set<TextBlock> ?? [])
+            .max(by: { $0.createdAt < $1.createdAt })
 
-        let target: NSManagedObject?
-        switch (latestStroke, latestShape) {
-        case let (s?, sh?): target = s.createdAt >= sh.createdAt ? s : sh
-        case let (s?, nil): target = s
-        case let (nil, sh?): target = sh
-        default: target = nil
-        }
+        let candidates: [(date: Date, object: NSManagedObject)] = [
+            latestStroke.map { ($0.createdAt, $0) },
+            latestShape.map { ($0.createdAt, $0) },
+            latestTextBlock.map { ($0.createdAt, $0) }
+        ].compactMap { $0 }
 
-        if let target = target {
+        if let target = candidates.max(by: { $0.date < $1.date })?.object {
             context.delete(target)
+            note.updatedAt = Date()
             save()
             loadNotes()
+        }
+    }
+
+    // MARK: - TextBlock CRUD
+
+    @discardableResult
+    public func addTextBlock(
+        to note: Note,
+        pageIndex: Int,
+        frame: CGRect,
+        text: String = "",
+        fontSize: Float = Float(TextBlockLayout.defaultFontSize),
+        colorHex: String = TextBlockLayout.defaultColorHex,
+        reloadNotes: Bool = true
+    ) -> TextBlock? {
+        guard !note.isDeleted else { return nil }
+        let targetContext = note.managedObjectContext ?? context
+        let now = Date()
+        let block = TextBlock(context: targetContext)
+        block.id = UUID()
+        block.text = text
+        block.frame = frame
+        block.fontSize = fontSize
+        block.colorHex = colorHex
+        block.pageIndex = Int16(max(0, pageIndex))
+        block.createdAt = now
+        block.updatedAt = now
+        block.note = note
+        note.updatedAt = now
+
+        if targetContext === context {
+            save()
+            if reloadNotes {
+                loadNotes()
+            }
+        } else {
+            do {
+                try targetContext.save()
+            } catch {
+                print("Core Data Save Error: \(error)")
+            }
+        }
+        return block
+    }
+
+    public func updateTextBlock(
+        _ block: TextBlock,
+        text: String? = nil,
+        frame: CGRect? = nil,
+        fontSize: Float? = nil,
+        colorHex: String? = nil,
+        reloadNotes: Bool = true
+    ) {
+        guard !block.isDeleted, let targetContext = block.managedObjectContext else { return }
+        let now = Date()
+        if let text { block.text = text }
+        if let frame { block.frame = frame }
+        if let fontSize { block.fontSize = fontSize }
+        if let colorHex { block.colorHex = colorHex }
+        block.updatedAt = now
+        block.note?.updatedAt = now
+
+        if targetContext === context {
+            save()
+            if reloadNotes {
+                loadNotes()
+            }
+        } else {
+            do {
+                try targetContext.save()
+            } catch {
+                print("Core Data Save Error: \(error)")
+            }
+        }
+    }
+
+    public func deleteTextBlock(_ block: TextBlock) {
+        guard !block.isDeleted, let targetContext = block.managedObjectContext else { return }
+        let owner = block.note
+        targetContext.delete(block)
+        owner?.updatedAt = Date()
+
+        if targetContext === context {
+            save()
+            loadNotes()
+        } else {
+            do {
+                try targetContext.save()
+            } catch {
+                print("Core Data Save Error: \(error)")
+            }
         }
     }
     

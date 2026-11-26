@@ -1,6 +1,7 @@
-import SwiftUI
-import PDFKit
+import Combine
 import CoreData
+import PDFKit
+import SwiftUI
 
 /// Deserializes a stroke's "x1,y1;x2,y2;..." point string back into CGPoints.
 func deserializeStrokePoints(_ str: String) -> [CGPoint] {
@@ -323,6 +324,9 @@ func shapePaperIsDark(_ page: PDFPage?) -> Bool {
 /// system arrow). Shared by both the PDFView and the page overlays.
 func toolCursor(for canvasVM: CanvasViewModel, zoom: CGFloat, page: PDFPage? = nil) -> NSCursor? {
     guard canvasVM.isDrawingMode, canvasVM.activeTool != .select else { return nil }
+    if canvasVM.activeTool == .textBox {
+        return .iBeam
+    }
 
     let darkPaper = canvasVM.activeTool == .shape && shapePaperIsDark(page)
     let signature = "\(canvasVM.activeTool.rawValue)|\(canvasVM.strokeColor)|\(canvasVM.strokeWidth)|\(zoom)|\(darkPaper)"
@@ -469,6 +473,10 @@ class PageDrawingCanvas: NSView {
         let det = transform.a * transform.d - transform.b * transform.c
         return abs(det) > 1e-6 ? transform : .identity
     }
+
+    // Inline text block editor overlay for this page.
+    private(set) var activeTextEditor: TextBlockEditorOverlay?
+    var onBeginTextEditing: ((PageDrawingCanvas) -> Void)?
 
     init(pageIndex: Int, noteVM: NoteViewModel?, canvasVM: CanvasViewModel?) {
         self.pageIndex = pageIndex
@@ -664,6 +672,23 @@ class PageDrawingCanvas: NSView {
             path.stroke()
         }
 
+        if let cg = NSGraphicsContext.current?.cgContext {
+            let editingID = canvasVM?.editingTextBlockID
+            if let page = paperPage, let pdfView {
+                let origin = convert(pdfView.convert(.zero as CGPoint, from: page), from: pdfView)
+                let x = convert(pdfView.convert(CGPoint(x: 1, y: 0), from: page), from: pdfView)
+                let y = convert(pdfView.convert(CGPoint(x: 0, y: 1), from: page), from: pdfView)
+                cg.saveGState()
+                cg.concatenate(CGAffineTransform(a: x.x - origin.x, b: x.y - origin.y,
+                                                 c: y.x - origin.x, d: y.y - origin.y,
+                                                 tx: origin.x, ty: origin.y))
+                renderTextBlocks(for: note, pageIndex: pageIndex, into: cg, excluding: editingID)
+                cg.restoreGState()
+            } else {
+                renderTextBlocks(for: note, pageIndex: pageIndex, into: cg, excluding: editingID)
+            }
+        }
+
         guard let cg = NSGraphicsContext.current?.cgContext,
               let canvasVM = canvasVM, canvasVM.isDrawingMode else { return }
 
@@ -693,6 +718,11 @@ class PageDrawingCanvas: NSView {
         )
     }
 
+    override func layout() {
+        super.layout()
+        activeTextEditor?.updateOverlayGeometry(in: self)
+    }
+
     override var acceptsFirstResponder: Bool { true }
     override var canBecomeKeyView: Bool { false }
 
@@ -702,8 +732,17 @@ class PageDrawingCanvas: NSView {
             return
         }
 
-        window?.makeFirstResponder(self)
         let point = self.convert(event.locationInWindow, from: nil)
+
+        if canvasVM.activeTool == .textBox {
+            handleTextBoxMouseDown(at: point)
+            invalidateCursor()
+            return
+        }
+
+        commitTextEditorIfNeeded()
+        canvasVM.commitActiveTextEdits()
+        window?.makeFirstResponder(self)
 
         switch canvasVM.activeTool {
         case .eraser:
@@ -714,6 +753,24 @@ class PageDrawingCanvas: NSView {
             needsDisplay = true
         case .select:
             if let note = noteVM?.selectedNote {
+                let isPlainDoubleClick = event.clickCount == 2
+                    && event.modifierFlags.intersection([.shift, .command, .option, .control]).isEmpty
+                if isPlainDoubleClick,
+                   case .textBlock(let blockID)? = selectionController.hitTestObject(
+                    at: point,
+                    in: note,
+                    pageIndex: pageIndex,
+                    pageToOverlay: pageToOverlayTransform
+                   ),
+                   let hitBlock = note.textBlocksArray.first(where: { $0.id == blockID && Int($0.pageIndex) == pageIndex }) {
+                    let (_, mediaBox) = pageGeometry(for: point)
+                    selectionController.cancelActiveDrag()
+                    canvasVM.clearSelection()
+                    canvasVM.selectTool(.textBox)
+                    beginEditing(textBlock: hitBlock, in: mediaBox)
+                    invalidateCursor()
+                    return
+                }
                 selectionController.beginSelectInteraction(
                     at: point,
                     modifierFlags: event.modifierFlags,
@@ -774,6 +831,8 @@ class PageDrawingCanvas: NSView {
                ) {
                 needsDisplay = true
             }
+        case .textBox:
+            break
         default:
             if selectionController.isDragging,
                let note = noteVM?.selectedNote,
@@ -804,7 +863,7 @@ class PageDrawingCanvas: NSView {
         let point = self.convert(event.locationInWindow, from: nil)
 
         switch canvasVM.activeTool {
-        case .eraser:
+        case .eraser, .textBox:
             break
         case .shape:
             saveActiveShape()
@@ -1006,6 +1065,126 @@ class PageDrawingCanvas: NSView {
         }
         return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
     }
+
+    // MARK: Inline TextBlock editing
+
+    private func pageGeometry(for localPoint: CGPoint) -> (pagePoint: CGPoint, mediaBox: CGRect) {
+        if let page = paperPage, let pdfView = pdfView {
+            let mediaBox = page.bounds(for: .mediaBox)
+            let viewPoint = convert(localPoint, to: pdfView)
+            let pagePoint = pdfView.convert(viewPoint, to: page)
+            return (pagePoint, mediaBox)
+        }
+        return (localPoint, bounds)
+    }
+
+    private func handleTextBoxMouseDown(at localPoint: CGPoint) {
+        guard let noteVM, let note = noteVM.selectedNote, let canvasVM else { return }
+
+        let (pagePoint, mediaBox) = pageGeometry(for: localPoint)
+        let hitBlock = TextBlockLayout.topmostTextBlock(at: pagePoint, in: note, pageIndex: pageIndex)
+
+        if let currentEditor = activeTextEditor {
+            let editingID = currentEditor.blockID
+            currentEditor.finishEditing(restoreCanvasFocus: false)
+            if let hitBlock, hitBlock.id != editingID {
+                beginEditing(textBlock: hitBlock, in: mediaBox)
+            } else {
+                window?.makeFirstResponder(pdfView ?? self)
+            }
+            return
+        }
+
+        if let hitBlock {
+            beginEditing(textBlock: hitBlock, in: mediaBox)
+        } else {
+            let frame = TextBlockLayout.defaultFrame(at: pagePoint, in: mediaBox)
+            let colorHex = PenColorComponents.from(canvasVM.strokeColor).hexString
+            beginEditingNewDraft(note: note, frame: frame, fontSize: canvasVM.textFontSize, colorHex: colorHex, in: mediaBox)
+        }
+    }
+
+    private func beginEditing(textBlock: TextBlock, in mediaBox: CGRect) {
+        onBeginTextEditing?(self)
+        commitTextEditorIfNeeded()
+
+        guard let canvasVM else { return }
+        canvasVM.editingTextBlockID = textBlock.id
+        canvasVM.textFontSize = CGFloat(textBlock.fontSize)
+        if let nsColor = NSColor(hex: textBlock.colorHex) {
+            canvasVM.applyStrokeColor(Color(nsColor: nsColor))
+        }
+
+        let overlay = TextBlockEditorOverlay(
+            block: textBlock,
+            mediaBox: mediaBox,
+            page: paperPage,
+            pdfView: pdfView,
+            noteVM: noteVM,
+            canvasVM: canvasVM
+        )
+        mountTextEditorOverlay(overlay)
+    }
+
+    private func beginEditingNewDraft(
+        note: Note,
+        frame: CGRect,
+        fontSize: CGFloat,
+        colorHex: String,
+        in mediaBox: CGRect
+    ) {
+        onBeginTextEditing?(self)
+        commitTextEditorIfNeeded()
+
+        guard let canvasVM else { return }
+        let overlay = TextBlockEditorOverlay(
+            note: note,
+            pageIndex: pageIndex,
+            initialFrame: frame,
+            fontSize: fontSize,
+            colorHex: colorHex,
+            mediaBox: mediaBox,
+            page: paperPage,
+            pdfView: pdfView,
+            noteVM: noteVM,
+            canvasVM: canvasVM
+        )
+        canvasVM.editingTextBlockID = overlay.blockID
+        mountTextEditorOverlay(overlay)
+    }
+
+    private func mountTextEditorOverlay(_ overlay: TextBlockEditorOverlay) {
+        overlay.onDidFinish = { [weak self, weak overlay] restoreFocus in
+            guard let self else { return }
+            if self.activeTextEditor === overlay {
+                self.activeTextEditor = nil
+            }
+            self.needsDisplay = true
+            if restoreFocus {
+                self.window?.makeFirstResponder(self.pdfView ?? self)
+            }
+        }
+
+        addSubview(overlay)
+        overlay.updateOverlayGeometry(in: self)
+        activeTextEditor = overlay
+        needsDisplay = true
+        overlay.focusEditor()
+    }
+
+    func commitTextEditorIfNeeded(deferPublishedUpdates: Bool = false) {
+        activeTextEditor?.finishEditing(restoreCanvasFocus: false, deferPublishedUpdates: deferPublishedUpdates)
+    }
+
+    func restoreTextEditorFocus() {
+        activeTextEditor?.focusEditor()
+    }
+
+    func syncActiveTextEditorStyle() {
+        guard let activeTextEditor, let canvasVM else { return }
+        let hex = PenColorComponents.from(canvasVM.strokeColor).hexString
+        activeTextEditor.applyStyle(fontSize: canvasVM.textFontSize, colorHex: hex)
+    }
 }
 
 class AnnotatedPDFOverlayProvider: NSObject, PDFPageOverlayViewProvider {
@@ -1030,6 +1209,7 @@ class AnnotatedPDFOverlayProvider: NSObject, PDFPageOverlayViewProvider {
             existing.noteVM = noteVM
             existing.canvasVM = canvasVM
             existing.currentZoom = zoom
+            existing.activeTextEditor?.updateOverlayGeometry(in: existing)
             return existing
         }
 
@@ -1037,6 +1217,9 @@ class AnnotatedPDFOverlayProvider: NSObject, PDFPageOverlayViewProvider {
         canvas.paperPage = page
         canvas.pdfView = pdfView
         canvas.currentZoom = zoom
+        canvas.onBeginTextEditing = { [weak self] activeCanvas in
+            self?.commitAllTextEditors(except: activeCanvas)
+        }
         overlays[pageIndex] = canvas
         return canvas
     }
@@ -1051,16 +1234,35 @@ class AnnotatedPDFOverlayProvider: NSObject, PDFPageOverlayViewProvider {
         }
     }
 
-    func clearCache() {
+    func clearCache(deferPublishedUpdates: Bool = false) {
         for canvas in overlays.values {
             canvas.selectionController.cancelActiveDrag()
         }
+        commitAllTextEditors(deferPublishedUpdates: deferPublishedUpdates)
         overlays.removeAll()
+    }
+
+    func commitAllTextEditors(except excluded: PageDrawingCanvas? = nil, deferPublishedUpdates: Bool = false) {
+        for canvas in overlays.values where canvas !== excluded {
+            canvas.commitTextEditorIfNeeded(deferPublishedUpdates: deferPublishedUpdates)
+        }
+    }
+
+    func restoreTextEditorFocus() {
+        for canvas in overlays.values {
+            canvas.restoreTextEditorFocus()
+        }
+    }
+
+    func syncActiveTextEditorStyles() {
+        for canvas in overlays.values {
+            canvas.syncActiveTextEditorStyle()
+        }
     }
 
     func redrawAll() {
         let incompatibleForSelectionDrag = canvasVM.map {
-            !$0.isDrawingMode || $0.activeTool == .eraser || $0.activeTool == .shape
+            !$0.isDrawingMode || $0.activeTool == .eraser || $0.activeTool == .shape || $0.activeTool == .textBox
         } ?? true
 
         for canvas in overlays.values {
@@ -1146,14 +1348,82 @@ struct PDFAnnotationCanvasView: NSViewRepresentable {
 
     class Coordinator: NSObject {
         let provider: AnnotatedPDFOverlayProvider
+        weak var canvasVM: CanvasViewModel?
+        private var cancellables: Set<AnyCancellable> = []
+        var notificationObservers: [NSObjectProtocol] = []
 
         init(noteVM: NoteViewModel, canvasVM: CanvasViewModel) {
             self.provider = AnnotatedPDFOverlayProvider(noteVM: noteVM, canvasVM: canvasVM)
+            self.canvasVM = canvasVM
+            super.init()
+
+            canvasVM.onCommitActiveTextEdits = { [weak self] in
+                self?.provider.commitAllTextEditors()
+            }
+            canvasVM.onRestoreTextEditorFocus = { [weak self] in
+                self?.provider.restoreTextEditorFocus()
+            }
+
+            canvasVM.$activeTool
+                .sink { [weak self] tool in
+                    guard tool != .textBox else { return }
+                    DispatchQueue.main.async {
+                        self?.provider.commitAllTextEditors()
+                    }
+                }
+                .store(in: &cancellables)
+
+            canvasVM.$isDrawingMode
+                .sink { [weak self] isDrawing in
+                    guard !isDrawing else { return }
+                    DispatchQueue.main.async {
+                        self?.provider.commitAllTextEditors()
+                    }
+                }
+                .store(in: &cancellables)
+
+            canvasVM.$textFontSize
+                .sink { [weak self] _ in
+                    DispatchQueue.main.async {
+                        self?.provider.syncActiveTextEditorStyles()
+                    }
+                }
+                .store(in: &cancellables)
+
+            canvasVM.$strokeColor
+                .sink { [weak self, weak canvasVM] _ in
+                    guard canvasVM?.activeTool == .textBox else { return }
+                    DispatchQueue.main.async {
+                        self?.provider.syncActiveTextEditorStyles()
+                    }
+                }
+                .store(in: &cancellables)
+        }
+
+        func teardown() {
+            provider.commitAllTextEditors()
+            for token in notificationObservers {
+                NotificationCenter.default.removeObserver(token)
+            }
+            notificationObservers.removeAll()
+            cancellables.removeAll()
+            canvasVM?.onCommitActiveTextEdits = nil
+            canvasVM?.onRestoreTextEditorFocus = nil
+        }
+
+        deinit {
+            for token in notificationObservers {
+                NotificationCenter.default.removeObserver(token)
+            }
         }
     }
 
     func makeCoordinator() -> Coordinator {
         return Coordinator(noteVM: noteVM, canvasVM: canvasVM)
+    }
+
+    static func dismantleNSView(_ nsView: NSPDFAnnotationView, coordinator: Coordinator) {
+        coordinator.teardown()
     }
 
     func makeNSView(context: Context) -> NSPDFAnnotationView {
@@ -1172,19 +1442,19 @@ struct PDFAnnotationCanvasView: NSViewRepresentable {
         pdfView.pageOverlayViewProvider = context.coordinator.provider
         pdfView.overlayProvider = context.coordinator.provider
 
-        NotificationCenter.default.addObserver(forName: .PDFViewPageChanged, object: pdfView, queue: .main) { _ in
-            if let page = pdfView.currentPage, let doc = pdfView.document {
-                let index = doc.index(for: page)
-                if selectedPageIndex != index {
-                    selectedPageIndex = index
-                }
+        let pageObserver = NotificationCenter.default.addObserver(forName: .PDFViewPageChanged, object: pdfView, queue: .main) { [weak pdfView] _ in
+            guard let pdfView, let page = pdfView.currentPage, let doc = pdfView.document else { return }
+            let index = doc.index(for: page)
+            if selectedPageIndex != index {
+                selectedPageIndex = index
             }
         }
+        context.coordinator.notificationObservers.append(pageObserver)
 
         // Reflect user-driven zoom (pinch / trackpad) back into the label. The
         // epsilon guard prevents a feedback loop with our own programmatic
         // scaleFactor assignments in updateNSView.
-        NotificationCenter.default.addObserver(forName: .PDFViewScaleChanged, object: pdfView, queue: .main) { [weak pdfView, weak provider = context.coordinator.provider] _ in
+        let scaleObserver = NotificationCenter.default.addObserver(forName: .PDFViewScaleChanged, object: pdfView, queue: .main) { [weak pdfView, weak provider = context.coordinator.provider] _ in
             guard let pdfView = pdfView else { return }
             if abs(pdfView.scaleFactor - zoomScale) > 0.001 {
                 zoomScale = pdfView.scaleFactor
@@ -1193,6 +1463,7 @@ struct PDFAnnotationCanvasView: NSViewRepresentable {
             pdfView.currentZoom = pdfView.scaleFactor
             pdfView.refreshCursor()
         }
+        context.coordinator.notificationObservers.append(scaleObserver)
 
         return pdfView
     }
@@ -1201,7 +1472,7 @@ struct PDFAnnotationCanvasView: NSViewRepresentable {
         if let note = noteVM.selectedNote, note.id == noteId {
             let doc = noteVM.getPDFDocument(for: note)
             if nsView.document !== doc {
-                context.coordinator.provider.clearCache()
+                context.coordinator.provider.clearCache(deferPublishedUpdates: true)
                 nsView.document = doc
             }
         }
