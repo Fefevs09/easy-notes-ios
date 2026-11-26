@@ -7,6 +7,7 @@ public enum PenColorToolContext: Equatable {
     case pen
     case highlighter
     case shape
+    case textBox
 
     public init(tool: ToolType) {
         switch tool {
@@ -14,6 +15,8 @@ public enum PenColorToolContext: Equatable {
             self = .highlighter
         case .shape:
             self = .shape
+        case .textBox:
+            self = .textBox
         default:
             self = .pen
         }
@@ -27,6 +30,8 @@ public enum PenColorToolContext: Equatable {
             return "Marca-texto"
         case .shape:
             return "Formas"
+        case .textBox:
+            return "Texto"
         }
     }
 

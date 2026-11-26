@@ -881,6 +881,13 @@ private struct PaperStrokePreview: View {
                     style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round)
                 )
                 .opacity(opacity)
+
+            case .textBox:
+                Text("Bloco de texto")
+                    .font(PixelTheme.uiFont(size: 14, weight: .medium))
+                    .foregroundStyle(color.opacity(opacity))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12)
             }
         }
     }

@@ -11,7 +11,7 @@ func serializeCanvasPoints(_ points: [CGPoint]) -> String {
 
 /// Manages unified selection, hit-testing, marquee selection, move/resize drags,
 /// keyboard nudging/deletion, cursor feedback, and selection overlay rendering
-/// for `Stroke`, `ShapeObject`, and `EditorImage` objects on a PDF page.
+/// for `TextBlock`, `Stroke`, `ShapeObject`, and `EditorImage` objects on a PDF page.
 final class CanvasSelectionController {
 
     enum ImageCornerHandle: CaseIterable {
@@ -46,6 +46,7 @@ final class CanvasSelectionController {
             initialStrokes: [UUID: (points: [CGPoint], rawPoints: String, wasDirty: Bool)],
             initialShapes: [UUID: (points: [CGPoint], rawPoints: String, wasDirty: Bool)],
             initialImages: [UUID: (overlayFrame: CGRect, pageFrame: CGRect, wasDirty: Bool)],
+            initialTextBlocks: [UUID: (overlayFrame: CGRect, pageFrame: CGRect, wasDirty: Bool)],
             didMove: Bool
         )
         case resizeShape(
@@ -107,7 +108,7 @@ final class CanvasSelectionController {
         switch tool {
         case .fountainPen, .calligraphy, .pencil, .highlighter:
             return true
-        case .eraser, .shape, .select:
+        case .eraser, .shape, .textBox, .select:
             return false
         }
     }
@@ -159,6 +160,10 @@ final class CanvasSelectionController {
         image.frame.applying(pageToOverlay)
     }
 
+    func boundingBox(for textBlock: TextBlock, pageToOverlay: CGAffineTransform) -> CGRect {
+        textBlock.frame.applying(pageToOverlay)
+    }
+
     func selectionBoundingBox(
         for selectedObjects: Set<CanvasObjectRef>,
         in note: Note,
@@ -189,6 +194,11 @@ final class CanvasSelectionController {
             include(boundingBox(for: image, pageToOverlay: pageToOverlay))
         }
 
+        let textBlocks = (note.textBlocks as? Set<TextBlock> ?? []).filter { $0.pageIndex == page }
+        for block in textBlocks where selectedObjects.contains(.textBlock(block.id)) {
+            include(boundingBox(for: block, pageToOverlay: pageToOverlay))
+        }
+
         return unionRect
     }
 
@@ -202,7 +212,19 @@ final class CanvasSelectionController {
     ) -> CanvasObjectRef? {
         let page = Int16(pageIndex)
 
-        // 1. Freehand strokes (drawn on top, newest first)
+        // 1. Text blocks (drawn on top, newest first)
+        let textBlocks = (note.textBlocks as? Set<TextBlock> ?? [])
+            .filter { $0.pageIndex == page }
+            .sorted { ($0.createdAt, $0.id.uuidString) > ($1.createdAt, $1.id.uuidString) }
+
+        for block in textBlocks {
+            let frame = boundingBox(for: block, pageToOverlay: pageToOverlay)
+            if frame.contains(point) {
+                return .textBlock(block.id)
+            }
+        }
+
+        // 2. Freehand strokes (drawn below text blocks, newest first)
         let strokes = (note.strokes as? Set<Stroke> ?? [])
             .filter { $0.pageIndex == page }
             .sorted { ($0.createdAt, $0.id.uuidString) > ($1.createdAt, $1.id.uuidString) }
@@ -213,7 +235,7 @@ final class CanvasSelectionController {
             }
         }
 
-        // 2. Geometric shapes (drawn below strokes, newest first)
+        // 3. Geometric shapes (drawn below strokes, newest first)
         let shapes = (note.shapes as? Set<ShapeObject> ?? [])
             .filter { $0.pageIndex == page }
             .sorted { ($0.createdAt, $0.id.uuidString) > ($1.createdAt, $1.id.uuidString) }
@@ -224,7 +246,7 @@ final class CanvasSelectionController {
             }
         }
 
-        // 3. Editor images (drawn behind shapes/strokes, newest first)
+        // 4. Editor images (drawn behind shapes/strokes, newest first)
         let images = (note.editorImages as? Set<EditorImage> ?? [])
             .filter { $0.pageIndex == page }
             .sorted { ($0.createdAt, $0.id.uuidString) > ($1.createdAt, $1.id.uuidString) }
@@ -247,6 +269,13 @@ final class CanvasSelectionController {
     ) -> Set<CanvasObjectRef> {
         let page = Int16(pageIndex)
         var hits: Set<CanvasObjectRef> = []
+
+        for block in (note.textBlocks as? Set<TextBlock> ?? []) where block.pageIndex == page {
+            let box = boundingBox(for: block, pageToOverlay: pageToOverlay)
+            if box.intersects(rect) {
+                hits.insert(.textBlock(block.id))
+            }
+        }
 
         for stroke in (note.strokes as? Set<Stroke> ?? []) where stroke.pageIndex == page {
             if let box = boundingBox(for: stroke), box.intersects(rect) {
@@ -531,6 +560,7 @@ final class CanvasSelectionController {
         var initialStrokes: [UUID: (points: [CGPoint], rawPoints: String, wasDirty: Bool)] = [:]
         var initialShapes: [UUID: (points: [CGPoint], rawPoints: String, wasDirty: Bool)] = [:]
         var initialImages: [UUID: (overlayFrame: CGRect, pageFrame: CGRect, wasDirty: Bool)] = [:]
+        var initialTextBlocks: [UUID: (overlayFrame: CGRect, pageFrame: CGRect, wasDirty: Bool)] = [:]
 
         for stroke in (note.strokes as? Set<Stroke> ?? [])
         where stroke.pageIndex == page && objects.contains(.stroke(stroke.id)) {
@@ -559,11 +589,21 @@ final class CanvasSelectionController {
             )
         }
 
+        for block in (note.textBlocks as? Set<TextBlock> ?? [])
+        where block.pageIndex == page && objects.contains(.textBlock(block.id)) {
+            initialTextBlocks[block.id] = (
+                overlayFrame: boundingBox(for: block, pageToOverlay: pageToOverlay),
+                pageFrame: block.frame,
+                wasDirty: block.hasChanges
+            )
+        }
+
         dragMode = .move(
             startPoint: point,
             initialStrokes: initialStrokes,
             initialShapes: initialShapes,
             initialImages: initialImages,
+            initialTextBlocks: initialTextBlocks,
             didMove: false
         )
     }
@@ -580,7 +620,7 @@ final class CanvasSelectionController {
         case .none:
             return false
 
-        case let .move(startPoint, initialStrokes, initialShapes, initialImages, didMove):
+        case let .move(startPoint, initialStrokes, initialShapes, initialImages, initialTextBlocks, didMove):
             let dx = point.x - startPoint.x
             let dy = point.y - startPoint.y
             let moved = didMove || hypot(dx, dy) > 0.1
@@ -591,6 +631,7 @@ final class CanvasSelectionController {
                     initialStrokes: initialStrokes.mapValues(\.points),
                     initialShapes: initialShapes.mapValues(\.points),
                     initialImages: initialImages.mapValues(\.overlayFrame),
+                    initialTextBlocks: initialTextBlocks.mapValues(\.overlayFrame),
                     note: note,
                     pageIndex: pageIndex,
                     pageToOverlay: pageToOverlay
@@ -601,6 +642,7 @@ final class CanvasSelectionController {
                 initialStrokes: initialStrokes,
                 initialShapes: initialShapes,
                 initialImages: initialImages,
+                initialTextBlocks: initialTextBlocks,
                 didMove: moved
             )
             return moved
@@ -691,8 +733,21 @@ final class CanvasSelectionController {
         case .none:
             return false
 
-        case let .move(_, _, _, _, didMove),
-             let .resizeShape(_, _, _, _, _, didMove),
+        case let .move(_, _, _, _, initialTextBlocks, didMove):
+            if didMove, let note {
+                if !initialTextBlocks.isEmpty {
+                    let now = Date()
+                    let page = Int16(pageIndex)
+                    for block in (note.textBlocks as? Set<TextBlock> ?? [])
+                    where block.pageIndex == page && initialTextBlocks[block.id] != nil {
+                        block.updatedAt = now
+                    }
+                }
+                persistChanges(for: note, noteVM: noteVM)
+            }
+            return true
+
+        case let .resizeShape(_, _, _, _, _, didMove),
              let .resizeImage(_, _, _, _, _, _, didMove):
             if didMove, let note {
                 persistChanges(for: note, noteVM: noteVM)
@@ -726,7 +781,7 @@ final class CanvasSelectionController {
         case .none, .marquee:
             break
 
-        case let .move(_, initialStrokes, initialShapes, initialImages, didMove):
+        case let .move(_, initialStrokes, initialShapes, initialImages, initialTextBlocks, didMove):
             if didMove, let targetNote {
                 let page = Int16(targetPage)
                 let moc = targetNote.managedObjectContext
@@ -741,14 +796,19 @@ final class CanvasSelectionController {
                 let images = (targetNote.editorImages as? Set<EditorImage> ?? []).filter {
                     $0.pageIndex == page && initialImages[$0.id] != nil
                 }
+                let textBlocks = (targetNote.textBlocks as? Set<TextBlock> ?? []).filter {
+                    $0.pageIndex == page && initialTextBlocks[$0.id] != nil
+                }
 
                 strokes.forEach { restoredObjectIDs.insert($0.objectID) }
                 shapes.forEach { restoredObjectIDs.insert($0.objectID) }
                 images.forEach { restoredObjectIDs.insert($0.objectID) }
+                textBlocks.forEach { restoredObjectIDs.insert($0.objectID) }
 
                 let allCleanBeforeDrag = strokes.allSatisfy { !(initialStrokes[$0.id]?.wasDirty ?? true) && !$0.isInserted }
                     && shapes.allSatisfy { !(initialShapes[$0.id]?.wasDirty ?? true) && !$0.isInserted }
                     && images.allSatisfy { !(initialImages[$0.id]?.wasDirty ?? true) && !$0.isInserted }
+                    && textBlocks.allSatisfy { !(initialTextBlocks[$0.id]?.wasDirty ?? true) && !$0.isInserted }
 
                 if let moc, allCleanBeforeDrag, canSafelyRollback(moc, restoringOnly: restoredObjectIDs) {
                     moc.rollback()
@@ -780,6 +840,15 @@ final class CanvasSelectionController {
                                 image.height = snapshot.pageFrame.height
                             } else {
                                 moc?.refresh(image, mergeChanges: false)
+                            }
+                        }
+                    }
+                    for block in textBlocks {
+                        if let snapshot = initialTextBlocks[block.id] {
+                            if snapshot.wasDirty || block.isInserted {
+                                block.frame = snapshot.pageFrame
+                            } else {
+                                moc?.refresh(block, mergeChanges: false)
                             }
                         }
                     }
@@ -907,6 +976,7 @@ final class CanvasSelectionController {
         var initialStrokes: [UUID: [CGPoint]] = [:]
         var initialShapes: [UUID: [CGPoint]] = [:]
         var initialImages: [UUID: CGRect] = [:]
+        var initialTextBlocks: [UUID: CGRect] = [:]
 
         for stroke in (note.strokes as? Set<Stroke> ?? [])
         where stroke.pageIndex == page && objects.contains(.stroke(stroke.id)) {
@@ -920,8 +990,12 @@ final class CanvasSelectionController {
         where image.pageIndex == page && objects.contains(.image(image.id)) {
             initialImages[image.id] = boundingBox(for: image, pageToOverlay: pageToOverlay)
         }
+        for block in (note.textBlocks as? Set<TextBlock> ?? [])
+        where block.pageIndex == page && objects.contains(.textBlock(block.id)) {
+            initialTextBlocks[block.id] = boundingBox(for: block, pageToOverlay: pageToOverlay)
+        }
 
-        guard !initialStrokes.isEmpty || !initialShapes.isEmpty || !initialImages.isEmpty else {
+        guard !initialStrokes.isEmpty || !initialShapes.isEmpty || !initialImages.isEmpty || !initialTextBlocks.isEmpty else {
             return
         }
 
@@ -931,10 +1005,18 @@ final class CanvasSelectionController {
             initialStrokes: initialStrokes,
             initialShapes: initialShapes,
             initialImages: initialImages,
+            initialTextBlocks: initialTextBlocks,
             note: note,
             pageIndex: pageIndex,
             pageToOverlay: pageToOverlay
         )
+        if !initialTextBlocks.isEmpty {
+            let now = Date()
+            for block in (note.textBlocks as? Set<TextBlock> ?? [])
+            where block.pageIndex == page && initialTextBlocks[block.id] != nil {
+                block.updatedAt = now
+            }
+        }
         persistChanges(for: note, noteVM: noteVM)
     }
 
@@ -963,6 +1045,11 @@ final class CanvasSelectionController {
         for image in (note.editorImages as? Set<EditorImage> ?? [])
         where image.pageIndex == page && selected.contains(.image(image.id)) {
             moc.delete(image)
+            deletedAny = true
+        }
+        for block in (note.textBlocks as? Set<TextBlock> ?? [])
+        where block.pageIndex == page && selected.contains(.textBlock(block.id)) {
+            moc.delete(block)
             deletedAny = true
         }
 
@@ -1008,6 +1095,7 @@ final class CanvasSelectionController {
         initialStrokes: [UUID: [CGPoint]],
         initialShapes: [UUID: [CGPoint]],
         initialImages: [UUID: CGRect],
+        initialTextBlocks: [UUID: CGRect],
         note: Note,
         pageIndex: Int,
         pageToOverlay: CGAffineTransform
@@ -1038,6 +1126,24 @@ final class CanvasSelectionController {
                 }
             }
         }
+
+        if !initialTextBlocks.isEmpty {
+            for block in (note.textBlocks as? Set<TextBlock> ?? []) where block.pageIndex == page {
+                if let initialOverlay = initialTextBlocks[block.id] {
+                    let translated = initialOverlay.offsetBy(dx: dx, dy: dy)
+                    block.frame = pageFrame(fromOverlayFrame: translated, pageToOverlay: pageToOverlay)
+                }
+            }
+        }
+    }
+
+    private func pageFrame(
+        fromOverlayFrame overlayFrame: CGRect,
+        pageToOverlay: CGAffineTransform
+    ) -> CGRect {
+        let determinant = pageToOverlay.a * pageToOverlay.d - pageToOverlay.b * pageToOverlay.c
+        let overlayToPage = abs(determinant) > 1e-6 ? pageToOverlay.inverted() : .identity
+        return overlayFrame.applying(overlayToPage)
     }
 
     private func applyOverlayFrame(
@@ -1045,13 +1151,11 @@ final class CanvasSelectionController {
         to image: EditorImage,
         pageToOverlay: CGAffineTransform
     ) {
-        let determinant = pageToOverlay.a * pageToOverlay.d - pageToOverlay.b * pageToOverlay.c
-        let overlayToPage = abs(determinant) > 1e-6 ? pageToOverlay.inverted() : .identity
-        let pageFrame = overlayFrame.applying(overlayToPage)
-        image.x = Double(pageFrame.origin.x)
-        image.y = Double(pageFrame.origin.y)
-        image.width = Double(pageFrame.width)
-        image.height = Double(pageFrame.height)
+        let converted = pageFrame(fromOverlayFrame: overlayFrame, pageToOverlay: pageToOverlay)
+        image.x = Double(converted.origin.x)
+        image.y = Double(converted.origin.y)
+        image.width = Double(converted.width)
+        image.height = Double(converted.height)
     }
 
     private func persistChanges(for note: Note, noteVM: NoteViewModel?) {
@@ -1075,6 +1179,12 @@ final class CanvasSelectionController {
 
     private func findImage(id: UUID, in note: Note, pageIndex: Int) -> EditorImage? {
         (note.editorImages as? Set<EditorImage> ?? []).first {
+            $0.pageIndex == Int16(pageIndex) && $0.id == id
+        }
+    }
+
+    private func findTextBlock(id: UUID, in note: Note, pageIndex: Int) -> TextBlock? {
+        (note.textBlocks as? Set<TextBlock> ?? []).first {
             $0.pageIndex == Int16(pageIndex) && $0.id == id
         }
     }
@@ -1170,8 +1280,11 @@ final class CanvasSelectionController {
                        let box = boundingBox(for: stroke) {
                         drawBoundingSelection(box, showCornerMarkers: showResizeHandles, in: cg)
                     }
-                case .textBlock:
-                    break
+                case .textBlock(let blockID):
+                    if let block = findTextBlock(id: blockID, in: note, pageIndex: pageIndex) {
+                        let frame = boundingBox(for: block, pageToOverlay: pageToOverlay)
+                        drawBoundingSelection(frame, showCornerMarkers: showResizeHandles, in: cg)
+                    }
                 }
             } else if let groupBox = selectionBoundingBox(
                 for: canvasVM.selectedObjects,
@@ -1257,6 +1370,10 @@ final class CanvasSelectionController {
         for image in (note.editorImages as? Set<EditorImage> ?? [])
         where image.pageIndex == page && selectedObjects.contains(.image(image.id)) {
             cg.stroke(boundingBox(for: image, pageToOverlay: pageToOverlay))
+        }
+        for block in (note.textBlocks as? Set<TextBlock> ?? [])
+        where block.pageIndex == page && selectedObjects.contains(.textBlock(block.id)) {
+            cg.stroke(boundingBox(for: block, pageToOverlay: pageToOverlay))
         }
         cg.restoreGState()
     }

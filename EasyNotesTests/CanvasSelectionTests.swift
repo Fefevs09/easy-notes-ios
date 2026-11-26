@@ -114,6 +114,29 @@ final class CanvasSelectionTests: XCTestCase {
         return image
     }
 
+    @discardableResult
+    private func addTextBlock(
+        to note: Note,
+        text: String = "Bloco de texto",
+        frame: CGRect,
+        fontSize: Float = 15.0,
+        colorHex: String = "#1C1C1E",
+        pageIndex: Int16 = 0,
+        createdAt: Date = Date()
+    ) -> TextBlock {
+        let block = TextBlock(context: context)
+        block.id = UUID()
+        block.text = text
+        block.frame = frame
+        block.fontSize = fontSize
+        block.colorHex = colorHex
+        block.pageIndex = pageIndex
+        block.createdAt = createdAt
+        block.updatedAt = createdAt
+        block.note = note
+        return block
+    }
+
     private func makeHostedCanvas(pageIndex: Int = 0) -> (canvas: PageDrawingCanvas, window: NSWindow) {
         _ = NSApplication.shared
         let window = NSWindow(
@@ -662,5 +685,143 @@ final class CanvasSelectionTests: XCTestCase {
         canvas.keyDown(with: try keyEvent(keyCode: 53, window: window))
         canvas.mouseMoved(with: try mouseEvent(type: .mouseMoved, point: CGPoint(x: 150, y: 140), window: window))
         XCTAssertEqual(NSCursor.current, NSCursor.arrow)
+    }
+
+    func testSelectAndMoveTextBlockWithSelectAndPenToolsPersistsAndUpdatesTimestamp() throws {
+        let note = try makeNote()
+        let block = addTextBlock(
+            to: note,
+            text: "Nota selecionável",
+            frame: CGRect(x: 100, y: 180, width: 180, height: 64)
+        )
+        try context.save()
+        let initialUpdatedAt = note.updatedAt
+
+        let (canvas, window) = makeHostedCanvas()
+        canvasVM.selectTool(.select)
+
+        // Select and move with `.select` by (+40, +25)
+        try drag(on: canvas, in: window, from: CGPoint(x: 150, y: 210), to: CGPoint(x: 190, y: 235))
+        XCTAssertEqual(canvasVM.selectedObjects, [.textBlock(block.id)])
+        XCTAssertEqual(block.x, 140.0, accuracy: 0.2)
+        XCTAssertEqual(block.y, 205.0, accuracy: 0.2)
+        XCTAssertEqual(block.width, 180.0, accuracy: 0.2)
+        XCTAssertEqual(block.height, 64.0, accuracy: 0.2)
+        XCTAssertFalse(context.hasChanges)
+        XCTAssertGreaterThan(note.updatedAt, initialUpdatedAt)
+
+        // Switch to Pen tool — selection persists and dragging inside moves the TextBlock
+        let afterSelectMove = note.updatedAt
+        canvasVM.selectTool(.fountainPen)
+        XCTAssertEqual(canvasVM.selectedObjects, [.textBlock(block.id)])
+
+        try drag(on: canvas, in: window, from: CGPoint(x: 190, y: 225), to: CGPoint(x: 240, y: 265))
+        XCTAssertEqual(note.strokesArray.count, 0)
+        XCTAssertEqual(block.x, 190.0, accuracy: 0.2)
+        XCTAssertEqual(block.y, 245.0, accuracy: 0.2)
+        XCTAssertFalse(context.hasChanges)
+        XCTAssertGreaterThan(note.updatedAt, afterSelectMove)
+
+        // Re-fetch from Core Data to confirm persistence
+        let request = NSFetchRequest<TextBlock>(entityName: "TextBlock")
+        let fetched = try XCTUnwrap(context.fetch(request).first)
+        XCTAssertEqual(fetched.id, block.id)
+        XCTAssertEqual(fetched.x, 190.0, accuracy: 0.2)
+        XCTAssertEqual(fetched.y, 245.0, accuracy: 0.2)
+
+        // Switching to `.textBox` clears active selection
+        canvasVM.selectTool(.textBox)
+        XCTAssertTrue(canvasVM.selectedObjects.isEmpty)
+        XCTAssertNil(canvasVM.selectedPageIndexForSelection)
+    }
+
+    func testMixedGroupSelectionCombiningTextBlockStrokeShapeAndImageMovesTogether() throws {
+        let note = try makeNote()
+        let stroke = addStroke(to: note, points: "60.0,60.0;140.0,60.0")
+        let shape = addShape(to: note, kind: .rectangle, points: "80.0,100.0;160.0,160.0")
+        let image = try addImage(to: note, frame: CGRect(x: 90, y: 180, width: 80, height: 60))
+        let block = addTextBlock(to: note, text: "Grupo", frame: CGRect(x: 100, y: 250, width: 120, height: 50))
+        try context.save()
+
+        let (canvas, window) = makeHostedCanvas()
+        canvasVM.selectTool(.select)
+
+        // Marquee encompassing all four object types
+        try drag(on: canvas, in: window, from: CGPoint(x: 40, y: 40), to: CGPoint(x: 240, y: 320))
+        XCTAssertEqual(
+            canvasVM.selectedObjects,
+            [.stroke(stroke.id), .shape(shape.id), .image(image.id), .textBlock(block.id)]
+        )
+
+        // Move entire mixed group by (+30, +20)
+        try drag(on: canvas, in: window, from: CGPoint(x: 120, y: 180), to: CGPoint(x: 150, y: 200))
+
+        XCTAssertEqual(deserializeStrokePoints(stroke.points)[0].x, 90.0, accuracy: 0.2)
+        XCTAssertEqual(deserializeStrokePoints(stroke.points)[0].y, 80.0, accuracy: 0.2)
+        XCTAssertEqual(deserializeStrokePoints(shape.points)[0].x, 110.0, accuracy: 0.2)
+        XCTAssertEqual(deserializeStrokePoints(shape.points)[0].y, 120.0, accuracy: 0.2)
+        XCTAssertEqual(image.x, 120.0, accuracy: 0.2)
+        XCTAssertEqual(image.y, 200.0, accuracy: 0.2)
+        XCTAssertEqual(block.x, 130.0, accuracy: 0.2)
+        XCTAssertEqual(block.y, 270.0, accuracy: 0.2)
+        XCTAssertFalse(context.hasChanges)
+
+        // Z-order hit-test: TextBlock overlapping Stroke/Shape/Image wins at overlap point
+        let overlapBlock = addTextBlock(to: note, text: "Topo", frame: CGRect(x: 110, y: 190, width: 100, height: 60))
+        try context.save()
+        let hit = canvas.selectionController.hitTestObject(
+            at: CGPoint(x: 140, y: 215),
+            in: note,
+            pageIndex: 0,
+            pageToOverlay: .identity
+        )
+        XCTAssertEqual(hit, .textBlock(overlapBlock.id))
+    }
+
+    func testEscapeCancelsTextBlockDragWithoutDirtyingContextAndCommitsActiveTextEditsOnSelect() throws {
+        let note = try makeNote()
+        let block = addTextBlock(
+            to: note,
+            text: "Original",
+            frame: CGRect(x: 120, y: 220, width: 160, height: 60)
+        )
+        try context.save()
+        XCTAssertFalse(context.hasChanges)
+
+        let (canvas, window) = makeHostedCanvas()
+        canvasVM.selectTool(.select)
+        canvasVM.setSelection([.textBlock(block.id)], pageIndex: 0)
+
+        // Begin move drag without mouseUp
+        canvas.mouseDown(with: try mouseEvent(type: .leftMouseDown, point: CGPoint(x: 160, y: 250), window: window))
+        canvas.mouseDragged(with: try mouseEvent(type: .leftMouseDragged, point: CGPoint(x: 260, y: 350), window: window))
+        XCTAssertEqual(block.x, 220.0, accuracy: 0.2)
+        XCTAssertEqual(block.y, 320.0, accuracy: 0.2)
+        XCTAssertTrue(context.hasChanges)
+
+        // Escape cancels drag, restores frame, clears selection, and leaves context clean
+        canvas.keyDown(with: try keyEvent(keyCode: 53, window: window))
+        XCTAssertTrue(canvasVM.selectedObjects.isEmpty)
+        XCTAssertFalse(canvas.selectionController.isDragging)
+        XCTAssertEqual(block.x, 120.0, accuracy: 0.1)
+        XCTAssertEqual(block.y, 220.0, accuracy: 0.1)
+        XCTAssertTrue(context.updatedObjects.isEmpty)
+        XCTAssertFalse(context.hasChanges)
+
+        // Clicking with `.select` calls `commitActiveTextEdits()` before initiating selection
+        var commitCalled = false
+        canvasVM.onCommitActiveTextEdits = { commitCalled = true }
+        canvas.mouseDown(with: try mouseEvent(type: .leftMouseDown, point: CGPoint(x: 160, y: 250), window: window))
+        canvas.mouseUp(with: try mouseEvent(type: .leftMouseUp, point: CGPoint(x: 160, y: 250), window: window))
+        XCTAssertTrue(commitCalled)
+        XCTAssertEqual(canvasVM.selectedObjects, [.textBlock(block.id)])
+
+        // Keyboard nudge (10pt) + Delete key remove the selected TextBlock cleanly
+        canvas.keyDown(with: try keyEvent(keyCode: 124, modifiers: .shift, window: window))
+        XCTAssertEqual(block.x, 130.0, accuracy: 0.1)
+        canvas.keyDown(with: try keyEvent(keyCode: 51, window: window))
+        XCTAssertTrue(canvasVM.selectedObjects.isEmpty)
+        XCTAssertEqual(note.textBlocksArray.count, 0)
+        XCTAssertFalse(context.hasChanges)
     }
 }

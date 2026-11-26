@@ -13,6 +13,7 @@ public class Note: NSManagedObject {
     @NSManaged public var strokes: NSSet?
     @NSManaged public var shapes: NSSet?
     @NSManaged var editorImages: NSSet?
+    @NSManaged public var textBlocks: NSSet?
     @NSManaged public var pdfData: Data?
     @NSManaged public var pageCount: Int16
 
