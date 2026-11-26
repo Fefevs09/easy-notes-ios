@@ -284,6 +284,7 @@ public final class AppSettingsStore: ObservableObject {
         public static let confirmBeforeEmptyingTrash = "easyNotes.settings.confirmBeforeEmptyingTrash"
         public static let defaultPenColorHex = "easyNotes.settings.defaultPenColorHex"
         public static let defaultHighlighterColorHex = "easyNotes.settings.defaultHighlighterColorHex"
+        public static let pressureSensitivityEnabled = "easyNotes.settings.pressureSensitivityEnabled"
         public static let defaultPenWidth = "easyNotes.settings.defaultPenWidth"
         public static let defaultEraserWidth = "easyNotes.settings.defaultEraserWidth"
         public static let penPresets = "easyNotes.settings.penPresets"
@@ -387,6 +388,10 @@ public final class AppSettingsStore: ObservableObject {
         }
     }
 
+    @Published public var pressureSensitivityEnabled: Bool {
+        didSet { persist(pressureSensitivityEnabled, forKey: Keys.pressureSensitivityEnabled) }
+    }
+
     @Published public var defaultPenWidth: Double {
         didSet {
             let clamped = Self.clamp(defaultPenWidth, to: Self.penWidthRange)
@@ -466,6 +471,8 @@ public final class AppSettingsStore: ObservableObject {
 
         self.defaultHighlighterColorHex = defaults.string(forKey: Keys.defaultHighlighterColorHex)
             .flatMap(PenColorComponents.normalizeHex) ?? Self.defaultHighlighterColorHexValue
+
+        self.pressureSensitivityEnabled = defaults.bool(forKey: Keys.pressureSensitivityEnabled)
 
         let storedPenWidth = defaults.object(forKey: Keys.defaultPenWidth) as? Double ?? Self.defaultPenWidthValue
         self.defaultPenWidth = Self.clamp(storedPenWidth, to: Self.penWidthRange)
@@ -600,6 +607,7 @@ public final class AppSettingsStore: ObservableObject {
         confirmBeforeEmptyingTrash = true
         defaultPenColorHex = Self.defaultPenColorHexValue
         defaultHighlighterColorHex = Self.defaultHighlighterColorHexValue
+        pressureSensitivityEnabled = false
         defaultPenWidth = Self.defaultPenWidthValue
         defaultEraserWidth = Self.defaultEraserWidthValue
         penPresets = PenPresetColor.defaults

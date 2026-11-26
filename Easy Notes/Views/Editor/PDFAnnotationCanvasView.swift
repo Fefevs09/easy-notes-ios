@@ -22,29 +22,9 @@ func deserializeStrokePoints(_ str: String) -> [CGPoint] {
 func renderStrokes(for note: Note, pageIndex: Int, into context: CGContext) {
     let strokesSet = note.strokes as? Set<Stroke> ?? []
     let pageStrokes = strokesSet.filter { $0.pageIndex == Int16(pageIndex) }
-    guard !pageStrokes.isEmpty else { return }
-
-    context.saveGState()
     for stroke in pageStrokes {
-        guard let pointsStr = stroke.points as String? else { continue }
-        let points = deserializeStrokePoints(pointsStr)
-        guard !points.isEmpty else { continue }
-
-        context.setLineWidth(CGFloat(stroke.width))
-        context.setLineCap(.round)
-        context.setLineJoin(.round)
-
-        let color = NSColor(hex: stroke.color) ?? NSColor.black
-        context.setStrokeColor(color.cgColor)
-
-        context.beginPath()
-        context.move(to: points[0])
-        for i in 1..<points.count {
-            context.addLine(to: points[i])
-        }
-        context.strokePath()
+        FreehandStrokeRenderer.draw(stroke, into: context)
     }
-    context.restoreGState()
 }
 
 // MARK: - Shape geometry
@@ -417,6 +397,8 @@ class PageDrawingCanvas: NSView {
     }
 
     private var activePoints: [CGPoint] = []
+    private var activePressure: StrokePressureCapture?
+    private var lastTabletPointPosition: CGPoint?
 
     // Shape drawing preview (while dragging out a new shape).
     private var activeShapeStart: CGPoint?
@@ -542,56 +524,21 @@ class PageDrawingCanvas: NSView {
 
         guard let note = noteVM?.selectedNote else { return }
 
-        // Bottom layers (grid + persisted shapes) via the shared CGContext path.
-        if let cg = NSGraphicsContext.current?.cgContext {
-            renderGrid(for: note, in: bounds, into: cg)
-            renderShapes(for: note, pageIndex: pageIndex, into: cg)
+        guard let cg = NSGraphicsContext.current?.cgContext else { return }
+        renderGrid(for: note, in: bounds, into: cg)
+        renderShapes(for: note, pageIndex: pageIndex, into: cg)
+        renderStrokes(for: note, pageIndex: pageIndex, into: cg)
+
+        guard let canvasVM, canvasVM.isDrawingMode else { return }
+        if let active = canvasVM.activeStroke, active.pageIndex == pageIndex {
+            FreehandStrokeRenderer.draw(
+                points: active.points,
+                pressure: activePressure?.samples,
+                width: canvasVM.strokeWidth,
+                color: NSColor(canvasVM.strokeColor),
+                into: cg
+            )
         }
-
-        let strokesSet = note.strokes as? Set<Stroke> ?? []
-        let pageStrokes = strokesSet.filter { $0.pageIndex == Int16(pageIndex) }
-
-        let path = NSBezierPath()
-        path.lineCapStyle = .round
-        path.lineJoinStyle = .round
-
-        for stroke in pageStrokes {
-            guard let pointsStr = stroke.points as String? else { continue }
-            let points = deserializePoints(pointsStr)
-            guard !points.isEmpty else { continue }
-
-            if let color = NSColor(hex: stroke.color) {
-                color.setStroke()
-            } else {
-                NSColor.black.setStroke()
-            }
-
-            path.removeAllPoints()
-            path.lineWidth = CGFloat(stroke.width)
-            path.move(to: points[0])
-            for i in 1..<points.count {
-                path.line(to: points[i])
-            }
-            path.stroke()
-        }
-
-        if let canvasVM = canvasVM,
-           canvasVM.isDrawingMode,
-           let active = canvasVM.activeStroke,
-           active.pageIndex == pageIndex {
-
-            NSColor(canvasVM.strokeColor).setStroke()
-            path.removeAllPoints()
-            path.lineWidth = canvasVM.strokeWidth
-            path.move(to: active.points[0])
-            for i in 1..<active.points.count {
-                path.line(to: active.points[i])
-            }
-            path.stroke()
-        }
-
-        guard let cg = NSGraphicsContext.current?.cgContext,
-              let canvasVM = canvasVM, canvasVM.isDrawingMode else { return }
 
         // Live preview of the shape currently being dragged out.
         if canvasVM.activeTool == .shape, activeShapePoints.count >= 2 {
@@ -657,6 +604,9 @@ class PageDrawingCanvas: NSView {
             return
         }
 
+        activePoints.removeAll()
+        activePressure = nil
+        canvasVM.activeStroke = nil
         window?.makeFirstResponder(self)
         let point = self.convert(event.locationInWindow, from: nil)
 
@@ -671,6 +621,12 @@ class PageDrawingCanvas: NSView {
             beginSelection(at: point)
         default:
             activePoints = [point]
+            lastTabletPointPosition = nil
+            activePressure = StrokePressureCapture(
+                enabled: canvasVM.pressureSensitivityEnabled,
+                tool: canvasVM.activeTool,
+                firstSample: TabletPressureSample(event: event)
+            )
             canvasVM.activeStroke = CanvasViewModel.ActiveStroke(pageIndex: pageIndex, points: activePoints)
             needsDisplay = true
         }
@@ -698,13 +654,55 @@ class PageDrawingCanvas: NSView {
             updateSelectionDrag(to: point)
         default:
             if let active = canvasVM.activeStroke, active.pageIndex == pageIndex {
-                activePoints.append(point)
-                canvasVM.activeStroke = CanvasViewModel.ActiveStroke(pageIndex: pageIndex, points: activePoints)
-                needsDisplay = true
+                let sample = TabletPressureSample(event: event)
+                if let tabletPos = lastTabletPointPosition,
+                   hypot(point.x - tabletPos.x, point.y - tabletPos.y) < 0.5 {
+                    lastTabletPointPosition = nil
+                    if let sample {
+                        _ = activePressure?.updateLast(sample)
+                    }
+                    needsDisplay = true
+                } else {
+                    lastTabletPointPosition = nil
+                    activePoints.append(point)
+                    activePressure?.append(sample)
+                    canvasVM.activeStroke = CanvasViewModel.ActiveStroke(pageIndex: pageIndex, points: activePoints)
+                    needsDisplay = true
+                }
             }
         }
 
         invalidateCursor()
+    }
+
+    override func tabletPoint(with event: NSEvent) {
+        guard let canvasVM = canvasVM,
+              canvasVM.isDrawingMode,
+              canvasVM.activeTool == .fountainPen,
+              canvasVM.activeStroke?.pageIndex == pageIndex,
+              let sample = TabletPressureSample(event: event) else {
+            super.tabletPoint(with: event)
+            return
+        }
+
+        let point = self.convert(event.locationInWindow, from: nil)
+        if let last = activePoints.last, hypot(point.x - last.x, point.y - last.y) < 0.5 {
+            guard activePressure?.updateLast(sample) == true else {
+                super.tabletPoint(with: event)
+                return
+            }
+            needsDisplay = true
+            return
+        }
+
+        guard activePressure?.appendAccepted(sample) == true else {
+            super.tabletPoint(with: event)
+            return
+        }
+        activePoints.append(point)
+        lastTabletPointPosition = point
+        canvasVM.activeStroke = CanvasViewModel.ActiveStroke(pageIndex: pageIndex, points: activePoints)
+        needsDisplay = true
     }
 
     override func mouseUp(with event: NSEvent) {
@@ -724,10 +722,12 @@ class PageDrawingCanvas: NSView {
             endSelectionDrag()
         default:
             if !activePoints.isEmpty { saveActiveStroke() }
-            activePoints.removeAll()
-            canvasVM.activeStroke = nil
         }
 
+        activePoints.removeAll()
+        activePressure = nil
+        lastTabletPointPosition = nil
+        canvasVM.activeStroke = nil
         needsDisplay = true
         invalidateCursor()
         // Re-assert the tool cursor immediately: the pointer is stationary at
@@ -872,7 +872,7 @@ class PageDrawingCanvas: NSView {
 
         let stroke = Stroke(context: moc)
         stroke.id = UUID()
-        stroke.points = serialized
+        stroke.points = StrokePressure.storing(activePressure?.samples, in: serialized)
         stroke.width = Float(canvasVM.strokeWidth)
         stroke.color = NSColor(canvasVM.strokeColor).hexString
         stroke.createdAt = Date()
@@ -902,7 +902,7 @@ class PageDrawingCanvas: NSView {
         let pageStrokes = strokesSet.filter { $0.pageIndex == Int16(pageIndex) }
         for stroke in pageStrokes {
             guard let pointsStr = stroke.points as String? else { continue }
-            let strokePoints = deserializePoints(pointsStr)
+            let strokePoints = deserializeStrokePoints(pointsStr)
             guard !strokePoints.isEmpty else { continue }
 
             if let bbox = getBoundingBox(for: strokePoints) {
@@ -947,20 +947,6 @@ class PageDrawingCanvas: NSView {
 
     private func serializePoints(_ pts: [CGPoint]) -> String {
         return pts.map { "\(String(format: "%.1f", $0.x)),\(String(format: "%.1f", $0.y))" }.joined(separator: ";")
-    }
-
-    private func deserializePoints(_ str: String) -> [CGPoint] {
-        var pts: [CGPoint] = []
-        let pairs = str.components(separatedBy: ";")
-        for pair in pairs {
-            let coords = pair.components(separatedBy: ",")
-            if coords.count == 2,
-               let x = Double(coords[0]),
-               let y = Double(coords[1]) {
-                pts.append(CGPoint(x: x, y: y))
-            }
-        }
-        return pts
     }
 
     private func getBoundingBox(for pts: [CGPoint]) -> CGRect? {

@@ -1255,22 +1255,10 @@ struct NoteThumbnailView: View {
 
                         context.scaleBy(x: scaleX, y: scaleY)
 
-                        for stroke in sortedStrokes {
-                            let points = deserializePoints(stroke.points)
-                            guard !points.isEmpty else { continue }
-
-                            var path = Path()
-                            path.move(to: points[0])
-                            for i in 1..<points.count {
-                                path.addLine(to: points[i])
+                        context.withCGContext { cg in
+                            for stroke in sortedStrokes {
+                                FreehandStrokeRenderer.draw(stroke, into: cg)
                             }
-
-                            let strokeColor = Color(nsColor: NSColor(hex: stroke.color) ?? .black)
-                            context.stroke(
-                                path,
-                                with: .color(strokeColor),
-                                style: StrokeStyle(lineWidth: CGFloat(stroke.width), lineCap: .round, lineJoin: .round)
-                            )
                         }
                     }
                     .background(Color.clear)
@@ -1324,20 +1312,5 @@ struct NoteThumbnailView: View {
         let image = NSImage(cgImage: pixels, size: bounds.size)
         cache.setImage(image, forKey: key, noteID: note.id)
         return image
-    }
-
-    // MARK: - Point Deserializer
-    private func deserializePoints(_ string: String) -> [CGPoint] {
-        guard !string.isEmpty else { return [] }
-        let coordinatePairs = string.components(separatedBy: ";")
-        return coordinatePairs.compactMap { pair in
-            let components = pair.components(separatedBy: ",")
-            if components.count == 2,
-               let x = Double(components[0]),
-               let y = Double(components[1]) {
-                return CGPoint(x: x, y: y)
-            }
-            return nil
-        }
     }
 }

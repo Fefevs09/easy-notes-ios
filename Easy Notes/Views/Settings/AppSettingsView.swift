@@ -52,7 +52,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .appearance:
             return ["aparencia", "aparência", "tema", "temas", "claro", "escuro", "sistema", "esquema", "cores", "contraste", "opacidade", "interface", "lavanda", "salvia", "sálvia", "terracota", "oceano", "ambar", "âmbar"]
         case .pensAndColors:
-            return ["caneta", "canetas", "cor", "cores", "marca-texto", "marcador", "borracha", "espessura", "atalho", "presets", "paleta"]
+            return ["caneta", "canetas", "cor", "cores", "marca-texto", "marcador", "borracha", "espessura", "pressão", "sensibilidade", "mesa digitalizadora", "atalho", "presets", "paleta"]
         case .paperAndNotes:
             return ["papel", "notas", "grade", "linhas", "quadriculado", "pontos", "orientacao", "orientação", "vertical", "horizontal", "nova nota"]
         case .storage:
@@ -688,6 +688,14 @@ struct AppSettingsView: View {
                         range: AppSettingsStore.penWidthRange,
                         step: 1.0,
                         badge: "\(Int(round(settings.defaultPenWidth))) pt"
+                    )
+
+                    divider
+
+                    toggleRow(
+                        title: "Sensibilidade à pressão",
+                        subtitle: "Varia a espessura da caneta tinteiro com a pressão da mesa digitalizadora.",
+                        isOn: $settings.pressureSensitivityEnabled
                     )
 
                     divider

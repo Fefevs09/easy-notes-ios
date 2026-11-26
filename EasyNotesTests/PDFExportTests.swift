@@ -173,6 +173,33 @@ class PDFExportTests: XCTestCase {
         XCTAssertLessThan(sampled.b, 0.4, "Expected suppressed blue channel at stroke location")
     }
 
+    func testExportedPressureStrokeVariesInWidthAndLegacyStrokeStaysConstant() throws {
+        viewModel.addNote(title: "Pressão", content: "")
+        let note = try XCTUnwrap(viewModel.notes.first)
+        addStroke(
+            to: note,
+            points: StrokePressure.storing([0.2, 1], in: "100,400;500,400"),
+            color: "#FF0000",
+            width: 32,
+            pageIndex: 0
+        )
+        addStroke(to: note, points: "100,300;500,300", color: "#FF0000", width: 32, pageIndex: 0)
+        let destination = makeTempPDFURL()
+        defer { try? FileManager.default.removeItem(at: destination) }
+        try viewModel.exportPDF(for: note, to: destination, options: PDFExportOptions(includeGrid: false))
+        let page = try XCTUnwrap(PDFDocument(url: destination)?.page(at: 0))
+
+        // Both strokes should cover their centerline. Nine points away, only
+        // the wide end of the pressure stroke and the legacy stroke cover ink.
+        for point in [CGPoint(x: 125, y: 400), CGPoint(x: 475, y: 409),
+                      CGPoint(x: 125, y: 309), CGPoint(x: 475, y: 309)] {
+            let ink = try XCTUnwrap(averageColor(on: page, at: point))
+            XCTAssertLessThan(ink.g, 0.4, "Expected ink at \(point)")
+        }
+        let paper = try XCTUnwrap(averageColor(on: page, at: CGPoint(x: 125, y: 409)))
+        XCTAssertGreaterThan(paper.g, 0.8)
+    }
+
     func testExportPDFOmitsStrokesFromOtherPages() throws {
         // Given a 2-page note with a stroke only on page 1 (0-indexed)
         viewModel.addNote(title: "Two Pages", content: "")
