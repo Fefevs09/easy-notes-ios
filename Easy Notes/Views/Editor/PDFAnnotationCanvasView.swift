@@ -398,6 +398,7 @@ class PageDrawingCanvas: NSView {
 
     private var activePoints: [CGPoint] = []
     private var activePressure: StrokePressureCapture?
+    private var lastTabletPointPosition: CGPoint?
 
     // Shape drawing preview (while dragging out a new shape).
     private var activeShapeStart: CGPoint?
@@ -620,6 +621,7 @@ class PageDrawingCanvas: NSView {
             beginSelection(at: point)
         default:
             activePoints = [point]
+            lastTabletPointPosition = nil
             activePressure = StrokePressureCapture(
                 enabled: canvasVM.pressureSensitivityEnabled,
                 tool: canvasVM.activeTool,
@@ -652,10 +654,21 @@ class PageDrawingCanvas: NSView {
             updateSelectionDrag(to: point)
         default:
             if let active = canvasVM.activeStroke, active.pageIndex == pageIndex {
-                activePoints.append(point)
-                activePressure?.append(TabletPressureSample(event: event))
-                canvasVM.activeStroke = CanvasViewModel.ActiveStroke(pageIndex: pageIndex, points: activePoints)
-                needsDisplay = true
+                let sample = TabletPressureSample(event: event)
+                if let tabletPos = lastTabletPointPosition,
+                   hypot(point.x - tabletPos.x, point.y - tabletPos.y) < 0.5 {
+                    lastTabletPointPosition = nil
+                    if let sample {
+                        _ = activePressure?.updateLast(sample)
+                    }
+                    needsDisplay = true
+                } else {
+                    lastTabletPointPosition = nil
+                    activePoints.append(point)
+                    activePressure?.append(sample)
+                    canvasVM.activeStroke = CanvasViewModel.ActiveStroke(pageIndex: pageIndex, points: activePoints)
+                    needsDisplay = true
+                }
             }
         }
 
@@ -663,14 +676,32 @@ class PageDrawingCanvas: NSView {
     }
 
     override func tabletPoint(with event: NSEvent) {
-        guard canvasVM?.isDrawingMode == true,
-              canvasVM?.activeTool == .fountainPen,
-              canvasVM?.activeStroke?.pageIndex == pageIndex,
-              let sample = TabletPressureSample(event: event),
-              activePressure?.updateLast(sample) == true else {
+        guard let canvasVM = canvasVM,
+              canvasVM.isDrawingMode,
+              canvasVM.activeTool == .fountainPen,
+              canvasVM.activeStroke?.pageIndex == pageIndex,
+              let sample = TabletPressureSample(event: event) else {
             super.tabletPoint(with: event)
             return
         }
+
+        let point = self.convert(event.locationInWindow, from: nil)
+        if let last = activePoints.last, hypot(point.x - last.x, point.y - last.y) < 0.5 {
+            guard activePressure?.updateLast(sample) == true else {
+                super.tabletPoint(with: event)
+                return
+            }
+            needsDisplay = true
+            return
+        }
+
+        guard activePressure?.appendAccepted(sample) == true else {
+            super.tabletPoint(with: event)
+            return
+        }
+        activePoints.append(point)
+        lastTabletPointPosition = point
+        canvasVM.activeStroke = CanvasViewModel.ActiveStroke(pageIndex: pageIndex, points: activePoints)
         needsDisplay = true
     }
 
@@ -695,6 +726,7 @@ class PageDrawingCanvas: NSView {
 
         activePoints.removeAll()
         activePressure = nil
+        lastTabletPointPosition = nil
         canvasVM.activeStroke = nil
         needsDisplay = true
         invalidateCursor()

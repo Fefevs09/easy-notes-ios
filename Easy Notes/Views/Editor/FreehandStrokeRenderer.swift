@@ -95,14 +95,51 @@ enum FreehandStrokeRenderer {
         let endNormal = normals[end - 1]
         path.move(to: samples[start].offset(by: startNormal))
         for index in (start + 1)..<end {
-            path.addLine(to: samples[index].offset(by: join(normals[index - 1], normals[index])))
+            let incoming = normals[index - 1]
+            let outgoing = normals[index]
+            let sample = samples[index]
+            let turn = cross(incoming, outgoing)
+            if turn < -0.001 {
+                path.addLine(to: sample.offset(by: incoming))
+                path.addArc(
+                    center: sample.position,
+                    radius: sample.radius,
+                    startAngle: atan2(incoming.dy, incoming.dx),
+                    endAngle: atan2(outgoing.dy, outgoing.dx),
+                    clockwise: true
+                )
+            } else if turn > 0.001 {
+                path.addLine(to: sample.offset(by: incoming))
+                path.addLine(to: sample.offset(by: outgoing))
+            } else {
+                path.addLine(to: sample.offset(by: outgoing))
+            }
         }
         path.addLine(to: samples[end].offset(by: endNormal))
         addCap(at: samples[end], from: endNormal, to: path)
 
         for index in ((start + 1)..<end).reversed() {
-            let normal = join(normals[index - 1], normals[index])
-            path.addLine(to: samples[index].offset(by: CGVector(dx: -normal.dx, dy: -normal.dy)))
+            let incoming = normals[index - 1]
+            let outgoing = normals[index]
+            let sample = samples[index]
+            let oppositeIncoming = CGVector(dx: -incoming.dx, dy: -incoming.dy)
+            let oppositeOutgoing = CGVector(dx: -outgoing.dx, dy: -outgoing.dy)
+            let turn = cross(incoming, outgoing)
+            if turn > 0.001 {
+                path.addLine(to: sample.offset(by: oppositeOutgoing))
+                path.addArc(
+                    center: sample.position,
+                    radius: sample.radius,
+                    startAngle: atan2(oppositeOutgoing.dy, oppositeOutgoing.dx),
+                    endAngle: atan2(oppositeIncoming.dy, oppositeIncoming.dx),
+                    clockwise: true
+                )
+            } else if turn < -0.001 {
+                path.addLine(to: sample.offset(by: oppositeOutgoing))
+                path.addLine(to: sample.offset(by: oppositeIncoming))
+            } else {
+                path.addLine(to: sample.offset(by: oppositeIncoming))
+            }
         }
         let oppositeStart = CGVector(dx: -startNormal.dx, dy: -startNormal.dy)
         path.addLine(to: samples[start].offset(by: oppositeStart))
@@ -115,9 +152,8 @@ enum FreehandStrokeRenderer {
         path.addArc(center: sample.position, radius: sample.radius, startAngle: angle, endAngle: angle - .pi, clockwise: true)
     }
 
-    private static func join(_ incoming: CGVector, _ outgoing: CGVector) -> CGVector {
-        let scale = 1 / (1 + dot(incoming, outgoing))
-        return CGVector(dx: (incoming.dx + outgoing.dx) * scale, dy: (incoming.dy + outgoing.dy) * scale)
+    private static func cross(_ first: CGVector, _ second: CGVector) -> CGFloat {
+        first.dx * second.dy - first.dy * second.dx
     }
 
     private static func dot(_ first: CGVector, _ second: CGVector) -> CGFloat {

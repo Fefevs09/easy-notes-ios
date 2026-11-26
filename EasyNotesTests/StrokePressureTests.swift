@@ -120,6 +120,101 @@ final class StrokePressureTests: XCTestCase {
         XCTAssertEqual(samples[0], 0.8, accuracy: 0.002)
     }
 
+    @MainActor
+    func testInterleavedTabletPointAtMovedPositionPreservesInitialPressureWithoutDuplication() throws {
+        _ = NSApplication.shared
+        let suite = "StrokePressureTests.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = AppSettingsStore(defaults: defaults)
+        settings.pressureSensitivityEnabled = true
+        let (model, _) = TestSupport.makeInMemoryViewModel()
+        let tools = CanvasViewModel(settings: settings)
+        model.addNote(title: "Intercalação tablet")
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 400, height: 300),
+            styleMask: [.titled], backing: .buffered, defer: false
+        )
+        let canvas = PageDrawingCanvas(pageIndex: 0, noteVM: model, canvasVM: tools)
+        window.contentView?.addSubview(canvas)
+
+        func makeEvent(_ type: CGEventType, location: CGPoint, pressure: Double) throws -> NSEvent {
+            let cgEvent = try XCTUnwrap(CGEvent(
+                mouseEventSource: nil, mouseType: .leftMouseDown,
+                mouseCursorPosition: location, mouseButton: .left
+            ))
+            cgEvent.type = type
+            cgEvent.setIntegerValueField(.mouseEventSubtype, value: 1)
+            cgEvent.setIntegerValueField(.tabletEventDeviceID, value: 42)
+            cgEvent.setDoubleValueField(.tabletEventPointPressure, value: pressure)
+            return try XCTUnwrap(NSEvent(cgEvent: cgEvent))
+        }
+
+        let pointA = CGPoint(x: 30, y: 30)
+        let pointB = CGPoint(x: 90, y: 50)
+        canvas.mouseDown(with: try makeEvent(.leftMouseDown, location: pointA, pressure: 0.25))
+        canvas.tabletPoint(with: try makeEvent(.tabletPointer, location: pointB, pressure: 0.8))
+        canvas.mouseDragged(with: try makeEvent(.leftMouseDragged, location: pointB, pressure: 0.8))
+        canvas.mouseUp(with: try makeEvent(.leftMouseUp, location: pointB, pressure: 0))
+
+        let strokes = try XCTUnwrap(model.selectedNote?.strokes as? Set<Stroke>)
+        let stroke = try XCTUnwrap(strokes.first)
+        let points = deserializeStrokePoints(stroke.points)
+        XCTAssertEqual(points.count, 2)
+        let samples = try XCTUnwrap(StrokePressure.samples(in: stroke.points, pointCount: 2))
+        XCTAssertEqual(samples[0], 0.25, accuracy: 0.002)
+        XCTAssertEqual(samples[1], 0.8, accuracy: 0.002)
+    }
+
+    func testSharpTurnPressureOutlineUsesRoundJoinWithoutMiterSpike() throws {
+        let width = 100
+        let height = 100
+        let bitmap = try XCTUnwrap(CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        let points = [CGPoint(x: 10, y: 40), CGPoint(x: 50, y: 40), CGPoint(x: 30, y: 70)]
+        let pressure: [CGFloat] = [1.0, 1.0, 1.0]
+        FreehandStrokeRenderer.draw(
+            points: points,
+            pressure: pressure,
+            width: 12,
+            color: NSColor(calibratedRed: 0, green: 0, blue: 0, alpha: 0.5),
+            into: bitmap
+        )
+
+        let bytes = try XCTUnwrap(bitmap.data).assumingMemoryBound(to: UInt8.self)
+        func distanceToSegment(_ p: CGPoint, _ a: CGPoint, _ b: CGPoint) -> CGFloat {
+            let abx = b.x - a.x
+            let aby = b.y - a.y
+            let lengthSquared = abx * abx + aby * aby
+            guard lengthSquared > 0 else { return hypot(p.x - a.x, p.y - a.y) }
+            let t = max(0, min(1, ((p.x - a.x) * abx + (p.y - a.y) * aby) / lengthSquared))
+            return hypot(p.x - (a.x + t * abx), p.y - (a.y + t * aby))
+        }
+
+        var maxDistance: CGFloat = 0
+        var maxAlpha: UInt8 = 0
+        for y in 0..<height {
+            for x in 0..<width {
+                let alpha = bytes[(y * width + x) * 4 + 3]
+                if alpha > maxAlpha { maxAlpha = alpha }
+                if alpha >= 60 {
+                    // CGContext pixel row 0 is at y = height - 1 in Quartz coordinates.
+                    let point = CGPoint(x: CGFloat(x) + 0.5, y: CGFloat(height - 1 - y) + 0.5)
+                    let dist = min(
+                        distanceToSegment(point, points[0], points[1]),
+                        distanceToSegment(point, points[1], points[2])
+                    )
+                    if dist > maxDistance { maxDistance = dist }
+                }
+            }
+        }
+
+        XCTAssertLessThanOrEqual(maxDistance, 6.8, "Sharp turn outline spiked to \(maxDistance) pt from centerline")
+        XCTAssertLessThanOrEqual(maxAlpha, 130, "Translucent ink should only be filled once (alpha=\(maxAlpha))")
+    }
+
     func testLongPressureStrokeRendersWithoutAPathPerSample() throws {
         let bitmap = try XCTUnwrap(CGContext(
             data: nil, width: 1024, height: 1024, bitsPerComponent: 8, bytesPerRow: 0,

@@ -49,6 +49,12 @@ struct StrokePressureCapture {
         samples?.append(sample?.deviceID == deviceID ? sample?.value ?? last : last)
     }
 
+    mutating func appendAccepted(_ sample: TabletPressureSample) -> Bool {
+        guard sample.deviceID == deviceID, samples != nil else { return false }
+        samples?.append(sample.value)
+        return true
+    }
+
     mutating func updateLast(_ sample: TabletPressureSample) -> Bool {
         guard sample.deviceID == deviceID, let index = samples?.indices.last,
               samples?[index] != sample.value else { return false }
