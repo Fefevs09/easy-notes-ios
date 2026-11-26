@@ -92,6 +92,7 @@ extension CoreDataStack {
         let beforeNotebookHierarchy = beforeNotebookColor.union(["colorIndex", "parent", "children"])
         let supportedSources = [
             makeHistoricalSource(),
+            makeHistoricalSource(missingNotebookFields: beforeNotebookColor),
             makeHistoricalSource(missingNoteFields: beforeGrid),
             makeHistoricalSource(missingNoteFields: beforeGrid, missingNotebookFields: beforeNotebookColor),
             makeHistoricalSource(missingNoteFields: beforeGrid, missingNotebookFields: beforeNotebookHierarchy),
