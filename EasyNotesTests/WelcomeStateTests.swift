@@ -364,7 +364,30 @@ final class WelcomeStateTests: XCTestCase {
         XCTAssertEqual(anchorRestoredCount, 1)
         XCTAssertFalse(session.focusResume)
 
-        // Escape falls back to Retomar tutorial when the anchor disappeared.
+        // Escape falls back to Retomar tutorial when the anchor is available without a restorer.
+        session.resume(step: .search, hasOpenNote: false, isInTrash: false)
+        session.setFocusRestorer(.search, nil)
+        session.pause(
+            .search,
+            activeStep: .search,
+            restoreFocus: true,
+            hasOpenNote: false,
+            isInTrash: false
+        ) { $0() }
+        XCTAssertEqual(anchorRestoredCount, 1)
+        XCTAssertEqual(session.footerState(for: .search, hasOpenNote: false, isInTrash: false), .paused)
+        XCTAssertTrue(session.focusResume)
+
+        // When the anchor disappears, footer switches to unavailable and does not keep a stale focusResume.
+        session.setVisible(.search, false)
+        if case .unavailable = session.footerState(for: .search, hasOpenNote: false, isInTrash: false) {
+            XCTAssertFalse(session.focusResume)
+        } else {
+            XCTFail("Expected unavailable footer state when anchor disappears")
+        }
+
+        // Escape when the anchor disappears during dismissal does not arm focusResume.
+        session.setVisible(.search, true)
         session.resume(step: .search, hasOpenNote: false, isInTrash: false)
         session.pause(
             .search,
@@ -376,8 +399,13 @@ final class WelcomeStateTests: XCTestCase {
             session.setVisible(.search, false)
             restore()
         }
-        XCTAssertEqual(anchorRestoredCount, 1)
-        XCTAssertTrue(session.focusResume)
+        XCTAssertFalse(session.focusResume)
+
+        // Losing window activity clears any pending tip focus request.
+        session.setVisible(.search, true)
+        session.resume(step: .search, hasOpenNote: false, isInTrash: false)
+        session.clearPendingTipFocus()
+        XCTAssertFalse(session.consumeTipFocusRequest(for: .search))
     }
 
     @MainActor

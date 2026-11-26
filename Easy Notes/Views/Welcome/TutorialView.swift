@@ -111,7 +111,14 @@ final class TutorialSession: ObservableObject {
             if pendingTipFocusStep == step {
                 pendingTipFocusStep = nil
             }
+            if pausedStep == step {
+                focusResume = false
+            }
         }
+    }
+
+    func clearPendingTipFocus() {
+        pendingTipFocusStep = nil
     }
 
     func setFocusRestorer(_ step: TutorialStep, _ restorer: (() -> Void)?) {
@@ -205,12 +212,15 @@ final class TutorialSession: ObservableObject {
         lastExternalClickDismiss = nil
         let performRestore: @MainActor () -> Void = { [weak self] in
             guard let self, self.pausedStep == step else { return }
-            if self.isAnchorAvailable(step, hasOpenNote: hasOpenNote, isInTrash: isInTrash),
-               let restoreAnchor = self.anchorFocusRestorers[step] {
-                self.focusResume = false
-                restoreAnchor()
+            if self.isAnchorAvailable(step, hasOpenNote: hasOpenNote, isInTrash: isInTrash) {
+                if let restoreAnchor = self.anchorFocusRestorers[step] {
+                    self.focusResume = false
+                    restoreAnchor()
+                } else {
+                    self.focusResume = true
+                }
             } else {
-                self.focusResume = true
+                self.focusResume = false
             }
         }
         if let scheduleFocusRestore {
@@ -366,6 +376,11 @@ struct TutorialWorkspace<Content: View>: View {
 
             if let step = welcome.tutorialStep, session.presentedStep == nil {
                 footer(for: step)
+            }
+        }
+        .onChange(of: appearsActive) { _, isActive in
+            if !isActive {
+                session.clearPendingTipFocus()
             }
         }
     }
