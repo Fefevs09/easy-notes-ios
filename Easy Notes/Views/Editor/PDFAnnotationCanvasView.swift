@@ -662,6 +662,18 @@ class PageDrawingCanvas: NSView {
         invalidateCursor()
     }
 
+    override func tabletPoint(with event: NSEvent) {
+        guard canvasVM?.isDrawingMode == true,
+              canvasVM?.activeTool == .fountainPen,
+              canvasVM?.activeStroke?.pageIndex == pageIndex,
+              let sample = TabletPressureSample(event: event),
+              activePressure?.updateLast(sample) == true else {
+            super.tabletPoint(with: event)
+            return
+        }
+        needsDisplay = true
+    }
+
     override func mouseUp(with event: NSEvent) {
         guard let canvasVM = canvasVM, canvasVM.isDrawingMode else {
             super.mouseUp(with: event)

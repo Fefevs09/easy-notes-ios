@@ -11,16 +11,21 @@ struct TabletPressureSample {
     }
 
     init?(event: NSEvent) {
-        // The mouse pressure field is also populated by trackpads. Tablet
-        // drivers attach tablet-point data to the mouse events used to draw.
-        guard event.type == .leftMouseDown || event.type == .leftMouseDragged,
-              event.subtype == .tabletPoint,
-              let tabletPoint = event.cgEvent else { return nil }
-        let pressure = tabletPoint.getDoubleValueField(.tabletEventPointPressure)
-        // A zero tablet field can also mean the driver supplied no pressure.
-        // Mouse-up releases are deliberately excluded from capture.
+        let pressure: CGFloat
+        switch event.type {
+        case .tabletPoint:
+            pressure = CGFloat(event.pressure)
+        case .leftMouseDown, .leftMouseDragged:
+            guard event.subtype == .tabletPoint else { return nil }
+            // Some tablet drivers expose pressure through the mouse event
+            // rather than the tablet-specific Quartz field.
+            let tabletPressure = event.cgEvent?.getDoubleValueField(.tabletEventPointPressure) ?? 0
+            pressure = tabletPressure > 0 ? CGFloat(tabletPressure) : CGFloat(event.pressure)
+        default:
+            return nil
+        }
         guard pressure > 0 else { return nil }
-        self.init(deviceID: event.deviceID, value: CGFloat(pressure))
+        self.init(deviceID: event.deviceID, value: pressure)
     }
 }
 
@@ -38,12 +43,17 @@ struct StrokePressureCapture {
     }
 
     mutating func append(_ sample: TabletPressureSample?) {
-        guard samples != nil else { return }
-        guard let sample, sample.deviceID == deviceID else {
-            samples = nil
-            return
-        }
-        samples?.append(sample.value)
+        guard let last = samples?.last else { return }
+        // Once the gesture is linked to a tablet, a mouse-only event can
+        // supply a position between pressure reports. Keep the last width.
+        samples?.append(sample?.deviceID == deviceID ? sample?.value ?? last : last)
+    }
+
+    mutating func updateLast(_ sample: TabletPressureSample) -> Bool {
+        guard sample.deviceID == deviceID, let index = samples?.indices.last,
+              samples?[index] != sample.value else { return false }
+        samples?[index] = sample.value
+        return true
     }
 }
 

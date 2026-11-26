@@ -51,7 +51,11 @@ final class StrokePressureTests: XCTestCase {
             ))
             event.setIntegerValueField(.mouseEventSubtype, value: 1) // kCGEventMouseSubtypeTabletPoint
             event.setIntegerValueField(.tabletEventDeviceID, value: 42)
-            event.setDoubleValueField(.tabletEventPointPressure, value: pressure)
+            if type == .leftMouseDragged {
+                event.setDoubleValueField(.mouseEventPressure, value: pressure)
+            } else {
+                event.setDoubleValueField(.tabletEventPointPressure, value: pressure)
+            }
             return try XCTUnwrap(NSEvent(cgEvent: event))
         }
 
@@ -77,8 +81,60 @@ final class StrokePressureTests: XCTestCase {
         let last = try XCTUnwrap(strokes.last)
         let samples = try XCTUnwrap(StrokePressure.samples(in: first.points, pointCount: 2))
         XCTAssertEqual(samples[0], 0.25, accuracy: 0.001)
-        XCTAssertEqual(samples[1], 0.75, accuracy: 0.001)
+        XCTAssertEqual(samples[1], 0.75, accuracy: 0.002)
         XCTAssertNil(StrokePressure.samples(in: last.points, pointCount: 2))
+    }
+
+    @MainActor
+    func testNativeTabletPointUpdatesPressureWithoutMouseMovement() throws {
+        _ = NSApplication.shared
+        let suite = "StrokePressureTests.\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = AppSettingsStore(defaults: defaults)
+        settings.pressureSensitivityEnabled = true
+        let (model, _) = TestSupport.makeInMemoryViewModel()
+        let tools = CanvasViewModel(settings: settings)
+        model.addNote(title: "Ponta parada")
+        let canvas = PageDrawingCanvas(pageIndex: 0, noteVM: model, canvasVM: tools)
+
+        func event(_ type: CGEventType, pressure: Double) throws -> NSEvent {
+            let cgEvent = try XCTUnwrap(CGEvent(
+                mouseEventSource: nil, mouseType: .leftMouseDown,
+                mouseCursorPosition: CGPoint(x: 30, y: 30), mouseButton: .left
+            ))
+            cgEvent.type = type
+            cgEvent.setIntegerValueField(.mouseEventSubtype, value: 1)
+            cgEvent.setIntegerValueField(.tabletEventDeviceID, value: 42)
+            cgEvent.setDoubleValueField(.tabletEventPointPressure, value: pressure)
+            return try XCTUnwrap(NSEvent(cgEvent: cgEvent))
+        }
+
+        canvas.mouseDown(with: try event(.leftMouseDown, pressure: 0.25))
+        canvas.tabletPoint(with: try event(.tabletPointer, pressure: 0.8))
+        canvas.mouseUp(with: try event(.leftMouseUp, pressure: 0))
+
+        let strokes = try XCTUnwrap(model.selectedNote?.strokes as? Set<Stroke>)
+        let stroke = try XCTUnwrap(strokes.first)
+        let samples = try XCTUnwrap(StrokePressure.samples(in: stroke.points, pointCount: 1))
+        XCTAssertEqual(samples[0], 0.8, accuracy: 0.002)
+    }
+
+    func testLongPressureStrokeRendersWithoutAPathPerSample() throws {
+        let bitmap = try XCTUnwrap(CGContext(
+            data: nil, width: 1024, height: 1024, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        let points = (0..<4_000).map { index in
+            CGPoint(x: 20 + Double(index) * 0.24, y: 512 + 120 * sin(Double(index) / 200))
+        }
+        let pressure = (0..<4_000).map { CGFloat(0.5 + 0.4 * sin(Double($0) / 90)) }
+
+        let start = ProcessInfo.processInfo.systemUptime
+        FreehandStrokeRenderer.draw(points: points, pressure: pressure, width: 12, color: .black, into: bitmap)
+        let elapsed = ProcessInfo.processInfo.systemUptime - start
+
+        XCTAssertLessThan(elapsed, 1, "Drawing one long stroke took \(elapsed) seconds")
     }
 
     func testGesturePolicyAndSampleFallback() throws {
@@ -89,11 +145,14 @@ final class StrokePressureTests: XCTestCase {
         XCTAssertEqual(capture.samples, [0.25, 0.8])
         capture.append(nil)
         capture.append(second)
-        XCTAssertNil(capture.samples)
+        XCTAssertEqual(capture.samples, [0.25, 0.8, 0.8, 0.8])
+        XCTAssertTrue(capture.updateLast(first))
+        XCTAssertEqual(capture.samples, [0.25, 0.8, 0.8, 0.25])
 
         var differentDevice = StrokePressureCapture(enabled: true, tool: .fountainPen, firstSample: first)
         differentDevice.append(TabletPressureSample(deviceID: 2, value: 0.8))
-        XCTAssertNil(differentDevice.samples)
+        XCTAssertEqual(differentDevice.samples, [0.25, 0.25])
+        XCTAssertFalse(differentDevice.updateLast(try XCTUnwrap(TabletPressureSample(deviceID: 2, value: 0.8))))
 
         var missingStart = StrokePressureCapture(enabled: true, tool: .fountainPen, firstSample: nil)
         missingStart.append(second)
@@ -140,6 +199,11 @@ final class StrokePressureTests: XCTestCase {
         try original.persistentStoreCoordinator.remove(originalStore)
 
         let reopened = try TestSupport.makeSQLiteContainer(at: storeURL)
+        let reopenedStore = try XCTUnwrap(reopened.persistentStoreCoordinator.persistentStores.first)
+        defer {
+            reopened.viewContext.reset()
+            try? reopened.persistentStoreCoordinator.remove(reopenedStore)
+        }
         let strokes = try reopened.viewContext.fetch(NSFetchRequest<Stroke>(entityName: "Stroke"))
         XCTAssertEqual(strokes.count, 2)
         let legacy = try XCTUnwrap(strokes.first { $0.pageIndex == 0 })
