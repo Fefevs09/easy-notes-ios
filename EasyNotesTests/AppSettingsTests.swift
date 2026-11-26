@@ -276,19 +276,19 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertNil(store.storageDirectoryBookmark)
     }
 
-    func testCoreDataStackFallsBackSafelyWhenCustomDirectoryIsMissing() {
-        let missingPath = FileManager.default.temporaryDirectory
-            .appendingPathComponent("easy-notes-missing-dir-\(UUID().uuidString)", isDirectory: true)
-            .path
+    func testCoreDataStackFallsBackSafelyWhenCustomDirectoryIsMissing() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("easy-notes-fallback-test-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let missingPath = directory.appendingPathComponent("missing").path
         isolatedDefaults.set(missingPath, forKey: AppSettingsStore.Keys.customStoragePath)
 
-        let stack = CoreDataStack(defaults: isolatedDefaults)
+        let stack = CoreDataStack(defaults: isolatedDefaults, welcome: nil, defaultStoreDirectory: directory)
         XCTAssertTrue(stack.didFallbackToDefaultStore)
         XCTAssertNotNil(stack.storageLoadWarning)
-        XCTAssertEqual(
-            stack.currentStoreURL?.deletingLastPathComponent().standardizedFileURL,
-            CoreDataStack.defaultStoreDirectoryURL.standardizedFileURL
-        )
+        XCTAssertEqual(stack.currentStoreURL?.deletingLastPathComponent().standardizedFileURL,
+                       directory.standardizedFileURL)
     }
 
     func testSettingsSearchFilteringMatchesKeywordsAndTitles() {

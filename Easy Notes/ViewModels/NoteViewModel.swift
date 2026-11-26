@@ -297,11 +297,18 @@ public class NoteViewModel: ObservableObject {
     
     public func addNote(title: String = "Nova Nota", content: String = "",
                         paper: GridStyle = .none, orientation: NoteOrientation = .portrait) {
-        // Prevent note creation when in Trash view
-        if selectedFilter == .trash {
-            selectedFilter = .all
+        do {
+            try addNote(title: title, content: content, paper: paper, orientation: orientation,
+                        template: .blank, month: 1, year: nil, locale: .current)
+        } catch {
+            print("Note Creation Error: \(error)")
         }
-        
+    }
+
+    func addNote(title: String, content: String = "", paper: GridStyle, orientation: NoteOrientation,
+                 template: NoteTemplate, month: Int, year: Int?, locale: Locale) throws {
+        let pdf = try NoteTemplatePDF.make(template, month: month, year: year,
+                                           orientation: orientation, locale: locale)
         let note = Note(context: context)
         note.id = UUID()
         note.title = title
@@ -314,7 +321,7 @@ public class NoteViewModel: ObservableObject {
             note.gridOriginX = Float(orientation.pageCenter.x)
             note.gridOriginY = Float(orientation.pageCenter.y)
         }
-        note.pdfData = createBlankPDF(pageCount: 1, size: orientation.pageSize)
+        note.pdfData = pdf.data
         note.pageCount = 1
         
         // Associate with notebook if active filter is notebook
@@ -324,8 +331,19 @@ public class NoteViewModel: ObservableObject {
             note.notebook = nil
         }
         
-        save()
-        loadNotes()
+        do {
+            try context.save()
+        } catch {
+            // Remove only this insertion, leaving other pending edits intact.
+            context.delete(note)
+            throw error
+        }
+
+        if selectedFilter == .trash {
+            selectedFilter = .all
+        } else {
+            loadNotes()
+        }
         selectedNote = note
     }
     
