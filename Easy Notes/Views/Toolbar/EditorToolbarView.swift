@@ -109,6 +109,7 @@ struct EditorToolbarView: View {
             separator
 
             Button {
+                canvasVM.clearSelection()
                 viewModel.undoLastObject()
             } label: {
                 iconLabel("arrow.uturn.backward", color: canUndo ? PixelTheme.inkSecondary : PixelTheme.muted.opacity(0.5))

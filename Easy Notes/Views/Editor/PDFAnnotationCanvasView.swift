@@ -364,19 +364,27 @@ class NSPDFAnnotationView: PDFView {
     weak var overlayProvider: AnnotatedPDFOverlayProvider?
     var currentZoom: CGFloat = 1.0
 
-    private func drawingCursor() -> NSCursor? {
+    private func rectCursor() -> NSCursor? {
         guard let canvasVM = canvasVM else { return nil }
-        if let selectionCursor = overlayProvider?.selectionCursor(in: self) {
-            return selectionCursor
-        }
         let hoveredPage = canvasVM.activeTool == .shape ? window.flatMap {
             page(for: convert($0.mouseLocationOutsideOfEventStream, from: nil), nearest: false)
         } : nil
         return toolCursor(for: canvasVM, zoom: currentZoom, page: hoveredPage)
     }
 
+    private func pointerCursor() -> NSCursor? {
+        guard let canvasVM = canvasVM else { return nil }
+        if let selectionCursor = overlayProvider?.selectionCursor(in: self) {
+            return selectionCursor
+        }
+        if canvasVM.isDrawingMode, canvasVM.activeTool == .select {
+            return .arrow
+        }
+        return rectCursor()
+    }
+
     override func keyDown(with event: NSEvent) {
-        if overlayProvider?.handleKeyDown(event) == true {
+        if overlayProvider?.handleKeyDown(event, in: self) == true {
             return
         }
         super.keyDown(with: event)
@@ -384,13 +392,13 @@ class NSPDFAnnotationView: PDFView {
 
     override func resetCursorRects() {
         super.resetCursorRects()
-        if let cursor = drawingCursor() {
+        if let cursor = rectCursor() {
             addCursorRect(bounds, cursor: cursor)
         }
     }
 
     override func cursorUpdate(with event: NSEvent) {
-        if let cursor = drawingCursor() {
+        if let cursor = pointerCursor() {
             cursor.set()
         } else {
             super.cursorUpdate(with: event)
@@ -402,14 +410,14 @@ class NSPDFAnnotationView: PDFView {
         // Reassert on every move: PDFView reliably receives mouse-moved events,
         // so this restores the tool cursor on the first movement after any
         // PDFKit relayout stomped it back to the default arrow.
-        drawingCursor()?.set()
+        pointerCursor()?.set()
     }
 
     /// Force the tool cursor if the pointer is currently inside the view. Used
     /// after a save/relayout when the pointer is stationary and no move event
     /// will fire to trigger the restoration in `mouseMoved`.
     func reassertCursorIfInside() {
-        guard let window = window, let cursor = drawingCursor() else { return }
+        guard let window = window, let cursor = pointerCursor() else { return }
         let point = convert(window.mouseLocationOutsideOfEventStream, from: nil)
         if bounds.contains(point) { cursor.set() }
     }
@@ -449,7 +457,7 @@ class PageDrawingCanvas: NSView {
     let selectionController = CanvasSelectionController()
 
     var pageToOverlayTransform: CGAffineTransform {
-        guard let page = paperPage, let pdfView else { return .identity }
+        guard superview != nil, window != nil, let page = paperPage, let pdfView else { return .identity }
         let origin = convert(pdfView.convert(.zero as CGPoint, from: page), from: pdfView)
         let x = convert(pdfView.convert(CGPoint(x: 1, y: 0), from: page), from: pdfView)
         let y = convert(pdfView.convert(CGPoint(x: 0, y: 1), from: page), from: pdfView)
@@ -524,7 +532,10 @@ class PageDrawingCanvas: NSView {
             selectionCursor.set()
             return true
         }
-        guard canvasVM.activeTool != .select else { return false }
+        if canvasVM.activeTool == .select {
+            NSCursor.arrow.set()
+            return true
+        }
         currentToolCursor(at: targetPoint).set()
         return true
     }
@@ -539,7 +550,9 @@ class PageDrawingCanvas: NSView {
         if bounds.contains(point) {
             if let selectionCursor = selectionCursor(at: point) {
                 selectionCursor.set()
-            } else if canvasVM.activeTool != .select {
+            } else if canvasVM.activeTool == .select {
+                NSCursor.arrow.set()
+            } else {
                 currentToolCursor(at: point).set()
             }
         }
@@ -779,7 +792,6 @@ class PageDrawingCanvas: NSView {
             }
         }
 
-        invalidateCursor()
         applyToolCursor(at: point)
     }
 
@@ -837,7 +849,8 @@ class PageDrawingCanvas: NSView {
             noteVM: noteVM,
             pageIndex: pageIndex,
             pageToOverlay: pageToOverlayTransform,
-            canvasVM: canvasVM
+            canvasVM: canvasVM,
+            firstResponder: window?.firstResponder
         ) {
             needsDisplay = true
             invalidateCursor()
@@ -1039,11 +1052,21 @@ class AnnotatedPDFOverlayProvider: NSObject, PDFPageOverlayViewProvider {
     }
 
     func clearCache() {
+        for canvas in overlays.values {
+            canvas.selectionController.cancelActiveDrag()
+        }
         overlays.removeAll()
     }
 
     func redrawAll() {
+        let incompatibleForSelectionDrag = canvasVM.map {
+            !$0.isDrawingMode || $0.activeTool == .eraser || $0.activeTool == .shape
+        } ?? true
+
         for canvas in overlays.values {
+            if incompatibleForSelectionDrag && canvas.selectionController.isDragging {
+                canvas.selectionController.cancelActiveDrag()
+            }
             canvas.needsDisplay = true
             canvas.invalidateCursor()
         }
@@ -1072,18 +1095,28 @@ class AnnotatedPDFOverlayProvider: NSObject, PDFPageOverlayViewProvider {
         return canvas.selectionCursor(at: localPoint)
     }
 
-    func handleKeyDown(_ event: NSEvent) -> Bool {
-        guard let canvasVM, !canvasVM.selectedObjects.isEmpty else { return false }
+    func handleKeyDown(_ event: NSEvent, in pdfView: PDFView) -> Bool {
+        guard let canvasVM, !canvasVM.selectedObjects.isEmpty || overlays.values.contains(where: { $0.selectionController.isDragging }) else {
+            return false
+        }
         let targetPage = canvasVM.selectedPageIndexForSelection
-            ?? overlays.keys.sorted().first
-        guard let targetPage, let canvas = overlays[targetPage] else { return false }
+            ?? pdfView.currentPage.flatMap { pdfView.document?.index(for: $0) }
+        guard let targetPage,
+              let canvas = overlays[targetPage],
+              canvas.window != nil,
+              canvas.superview != nil,
+              let paperPage = canvas.paperPage,
+              pdfView.currentPage === paperPage || pdfView.visiblePages.contains(where: { $0 === paperPage }) else {
+            return false
+        }
         if canvas.selectionController.handleKeyDown(
             event,
             note: noteVM?.selectedNote,
             noteVM: noteVM,
             pageIndex: targetPage,
             pageToOverlay: canvas.pageToOverlayTransform,
-            canvasVM: canvasVM
+            canvasVM: canvasVM,
+            firstResponder: pdfView.window?.firstResponder
         ) {
             canvas.needsDisplay = true
             canvas.invalidateCursor()

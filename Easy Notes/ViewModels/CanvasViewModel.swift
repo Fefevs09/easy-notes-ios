@@ -130,6 +130,7 @@ public class CanvasViewModel: ObservableObject {
         set {
             if let id = newValue {
                 selectedObjects = [.shape(id)]
+                selectedPageIndexForSelection = nil
             } else {
                 clearSelection()
             }

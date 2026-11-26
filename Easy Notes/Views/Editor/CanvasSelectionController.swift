@@ -43,22 +43,26 @@ final class CanvasSelectionController {
         case none
         case move(
             startPoint: CGPoint,
-            initialStrokes: [UUID: [CGPoint]],
-            initialShapes: [UUID: [CGPoint]],
-            initialImages: [UUID: CGRect],
+            initialStrokes: [UUID: (points: [CGPoint], rawPoints: String, wasDirty: Bool)],
+            initialShapes: [UUID: (points: [CGPoint], rawPoints: String, wasDirty: Bool)],
+            initialImages: [UUID: (overlayFrame: CGRect, pageFrame: CGRect, wasDirty: Bool)],
             didMove: Bool
         )
         case resizeShape(
             shapeID: UUID,
             handleIndex: Int,
             initialPoints: [CGPoint],
+            rawPoints: String,
+            wasDirty: Bool,
             didMove: Bool
         )
         case resizeImage(
             imageID: UUID,
             corner: ImageCornerHandle,
             anchor: CGPoint,
-            initialFrame: CGRect,
+            initialOverlayFrame: CGRect,
+            initialPageFrame: CGRect,
+            wasDirty: Bool,
             didMove: Bool
         )
         case marquee(
@@ -74,6 +78,9 @@ final class CanvasSelectionController {
     private let hitThreshold: CGFloat = 12.0
 
     private var dragMode: DragMode = .none
+    private weak var activeDragNote: Note?
+    private var activeDragPageIndex: Int = 0
+    private var activeDragTransform: CGAffineTransform = .identity
 
     var isDragging: Bool {
         if case .none = dragMode { return false }
@@ -297,7 +304,19 @@ final class CanvasSelectionController {
             return Self.pointToSegmentDistance(point, pts[0], pts[1]) <= tolerance
         }
         let outline = sampleShapePolyline(kind: kind, points: pts)
-        return outline.contains { hypot($0.x - point.x, $0.y - point.y) <= tolerance }
+        guard !outline.isEmpty else { return false }
+        if outline.count == 1 {
+            return hypot(outline[0].x - point.x, outline[0].y - point.y) <= tolerance
+        }
+        let segmentCount = shapeIsClosed(kind) ? outline.count : (outline.count - 1)
+        for i in 0..<segmentCount {
+            let a = outline[i]
+            let b = outline[(i + 1) % outline.count]
+            if Self.pointToSegmentDistance(point, a, b) <= tolerance {
+                return true
+            }
+        }
+        return false
     }
 
     func shapeHandleIndex(at point: CGPoint, for shape: ShapeObject) -> Int? {
@@ -339,6 +358,10 @@ final class CanvasSelectionController {
         canvasVM: CanvasViewModel
     ) {
         dragMode = .none
+        activeDragNote = note
+        activeDragPageIndex = pageIndex
+        activeDragTransform = pageToOverlay
+
         let isShift = modifierFlags.contains(.shift)
         let samePageSelection = isSelectionActive(on: pageIndex, canvasVM: canvasVM)
         let currentSelectionOnPage = samePageSelection ? canvasVM.selectedObjects : []
@@ -354,6 +377,8 @@ final class CanvasSelectionController {
                         shapeID: shapeID,
                         handleIndex: handleIdx,
                         initialPoints: pts,
+                        rawPoints: shape.points,
+                        wasDirty: shape.hasChanges,
                         didMove: false
                     )
                     return
@@ -367,7 +392,9 @@ final class CanvasSelectionController {
                             imageID: imageID,
                             corner: corner,
                             anchor: anchor,
-                            initialFrame: frame,
+                            initialOverlayFrame: frame,
+                            initialPageFrame: image.frame,
+                            wasDirty: image.hasChanges,
                             didMove: false
                         )
                         return
@@ -466,6 +493,9 @@ final class CanvasSelectionController {
                 pageIndex: pageIndex,
                 pageToOverlay: pageToOverlay
               ) else {
+            if !canvasVM.selectedObjects.isEmpty {
+                canvasVM.clearSelection()
+            }
             return false
         }
 
@@ -473,6 +503,9 @@ final class CanvasSelectionController {
             if canvasVM.selectedPageIndexForSelection == nil {
                 canvasVM.selectedPageIndexForSelection = pageIndex
             }
+            activeDragNote = note
+            activeDragPageIndex = pageIndex
+            activeDragTransform = pageToOverlay
             startMoveDrag(
                 at: point,
                 objects: canvasVM.selectedObjects,
@@ -495,23 +528,35 @@ final class CanvasSelectionController {
         pageToOverlay: CGAffineTransform
     ) {
         let page = Int16(pageIndex)
-        var initialStrokes: [UUID: [CGPoint]] = [:]
-        var initialShapes: [UUID: [CGPoint]] = [:]
-        var initialImages: [UUID: CGRect] = [:]
+        var initialStrokes: [UUID: (points: [CGPoint], rawPoints: String, wasDirty: Bool)] = [:]
+        var initialShapes: [UUID: (points: [CGPoint], rawPoints: String, wasDirty: Bool)] = [:]
+        var initialImages: [UUID: (overlayFrame: CGRect, pageFrame: CGRect, wasDirty: Bool)] = [:]
 
         for stroke in (note.strokes as? Set<Stroke> ?? [])
         where stroke.pageIndex == page && objects.contains(.stroke(stroke.id)) {
-            initialStrokes[stroke.id] = deserializeStrokePoints(stroke.points)
+            initialStrokes[stroke.id] = (
+                points: deserializeStrokePoints(stroke.points),
+                rawPoints: stroke.points,
+                wasDirty: stroke.hasChanges
+            )
         }
 
         for shape in (note.shapes as? Set<ShapeObject> ?? [])
         where shape.pageIndex == page && objects.contains(.shape(shape.id)) {
-            initialShapes[shape.id] = deserializeStrokePoints(shape.points)
+            initialShapes[shape.id] = (
+                points: deserializeStrokePoints(shape.points),
+                rawPoints: shape.points,
+                wasDirty: shape.hasChanges
+            )
         }
 
         for image in (note.editorImages as? Set<EditorImage> ?? [])
         where image.pageIndex == page && objects.contains(.image(image.id)) {
-            initialImages[image.id] = boundingBox(for: image, pageToOverlay: pageToOverlay)
+            initialImages[image.id] = (
+                overlayFrame: boundingBox(for: image, pageToOverlay: pageToOverlay),
+                pageFrame: image.frame,
+                wasDirty: image.hasChanges
+            )
         }
 
         dragMode = .move(
@@ -539,16 +584,18 @@ final class CanvasSelectionController {
             let dx = point.x - startPoint.x
             let dy = point.y - startPoint.y
             let moved = didMove || hypot(dx, dy) > 0.1
-            applyTranslation(
-                dx: dx,
-                dy: dy,
-                initialStrokes: initialStrokes,
-                initialShapes: initialShapes,
-                initialImages: initialImages,
-                note: note,
-                pageIndex: pageIndex,
-                pageToOverlay: pageToOverlay
-            )
+            if moved {
+                applyTranslation(
+                    dx: dx,
+                    dy: dy,
+                    initialStrokes: initialStrokes.mapValues(\.points),
+                    initialShapes: initialShapes.mapValues(\.points),
+                    initialImages: initialImages.mapValues(\.overlayFrame),
+                    note: note,
+                    pageIndex: pageIndex,
+                    pageToOverlay: pageToOverlay
+                )
+            }
             dragMode = .move(
                 startPoint: startPoint,
                 initialStrokes: initialStrokes,
@@ -556,48 +603,58 @@ final class CanvasSelectionController {
                 initialImages: initialImages,
                 didMove: moved
             )
-            return true
+            return moved
 
-        case let .resizeShape(shapeID, handleIndex, initialPoints, didMove):
+        case let .resizeShape(shapeID, handleIndex, initialPoints, rawPoints, wasDirty, didMove):
             guard let shape = findShape(id: shapeID, in: note, pageIndex: pageIndex),
                   handleIndex < initialPoints.count else {
                 return false
             }
-            var pts = initialPoints
             let moved = didMove || hypot(point.x - initialPoints[handleIndex].x,
                                          point.y - initialPoints[handleIndex].y) > 0.1
-            pts[handleIndex] = point
-            shape.points = serializeCanvasPoints(pts)
+            if moved {
+                var pts = initialPoints
+                pts[handleIndex] = point
+                shape.points = serializeCanvasPoints(pts)
+            }
             dragMode = .resizeShape(
                 shapeID: shapeID,
                 handleIndex: handleIndex,
                 initialPoints: initialPoints,
+                rawPoints: rawPoints,
+                wasDirty: wasDirty,
                 didMove: moved
             )
-            return true
+            return moved
 
-        case let .resizeImage(imageID, corner, anchor, initialFrame, didMove):
+        case let .resizeImage(imageID, corner, anchor, initialOverlayFrame, initialPageFrame, wasDirty, didMove):
             guard let image = findImage(id: imageID, in: note, pageIndex: pageIndex) else {
                 return false
             }
             let resizedOverlay = Self.aspectPreservingResizedFrame(
-                initialFrame: initialFrame,
+                initialFrame: initialOverlayFrame,
                 anchor: anchor,
                 draggedCorner: corner,
                 to: point,
                 minimumDimension: Self.minimumImageDimension
             )
-            applyOverlayFrame(resizedOverlay, to: image, pageToOverlay: pageToOverlay)
-            let moved = didMove || abs(resizedOverlay.width - initialFrame.width) > 0.1
-                || abs(resizedOverlay.height - initialFrame.height) > 0.1
+            let moved = didMove || abs(resizedOverlay.width - initialOverlayFrame.width) > 0.1
+                || abs(resizedOverlay.height - initialOverlayFrame.height) > 0.1
+                || abs(resizedOverlay.origin.x - initialOverlayFrame.origin.x) > 0.1
+                || abs(resizedOverlay.origin.y - initialOverlayFrame.origin.y) > 0.1
+            if moved {
+                applyOverlayFrame(resizedOverlay, to: image, pageToOverlay: pageToOverlay)
+            }
             dragMode = .resizeImage(
                 imageID: imageID,
                 corner: corner,
                 anchor: anchor,
-                initialFrame: initialFrame,
+                initialOverlayFrame: initialOverlayFrame,
+                initialPageFrame: initialPageFrame,
+                wasDirty: wasDirty,
                 didMove: moved
             )
-            return true
+            return moved
 
         case let .marquee(origin, _, baseSelection, marqueePage):
             let rect = normalizedRect(origin, point)
@@ -626,14 +683,17 @@ final class CanvasSelectionController {
         pageToOverlay: CGAffineTransform,
         canvasVM: CanvasViewModel?
     ) -> Bool {
-        defer { dragMode = .none }
+        defer {
+            dragMode = .none
+            activeDragNote = nil
+        }
         switch dragMode {
         case .none:
             return false
 
         case let .move(_, _, _, _, didMove),
-             let .resizeShape(_, _, _, didMove),
-             let .resizeImage(_, _, _, _, didMove):
+             let .resizeShape(_, _, _, _, _, didMove),
+             let .resizeImage(_, _, _, _, _, _, didMove):
             if didMove, let note {
                 persistChanges(for: note, noteVM: noteVM)
             }
@@ -658,8 +718,117 @@ final class CanvasSelectionController {
         }
     }
 
-    func cancelActiveDrag() {
+    func cancelActiveDrag(note: Note? = nil, pageIndex: Int? = nil) {
+        let targetNote = note ?? activeDragNote
+        let targetPage = pageIndex ?? activeDragPageIndex
+
+        switch dragMode {
+        case .none, .marquee:
+            break
+
+        case let .move(_, initialStrokes, initialShapes, initialImages, didMove):
+            if didMove, let targetNote {
+                let page = Int16(targetPage)
+                let moc = targetNote.managedObjectContext
+                var restoredObjectIDs: Set<NSManagedObjectID> = []
+
+                let strokes = (targetNote.strokes as? Set<Stroke> ?? []).filter {
+                    $0.pageIndex == page && initialStrokes[$0.id] != nil
+                }
+                let shapes = (targetNote.shapes as? Set<ShapeObject> ?? []).filter {
+                    $0.pageIndex == page && initialShapes[$0.id] != nil
+                }
+                let images = (targetNote.editorImages as? Set<EditorImage> ?? []).filter {
+                    $0.pageIndex == page && initialImages[$0.id] != nil
+                }
+
+                strokes.forEach { restoredObjectIDs.insert($0.objectID) }
+                shapes.forEach { restoredObjectIDs.insert($0.objectID) }
+                images.forEach { restoredObjectIDs.insert($0.objectID) }
+
+                let allCleanBeforeDrag = strokes.allSatisfy { !(initialStrokes[$0.id]?.wasDirty ?? true) && !$0.isInserted }
+                    && shapes.allSatisfy { !(initialShapes[$0.id]?.wasDirty ?? true) && !$0.isInserted }
+                    && images.allSatisfy { !(initialImages[$0.id]?.wasDirty ?? true) && !$0.isInserted }
+
+                if let moc, allCleanBeforeDrag, canSafelyRollback(moc, restoringOnly: restoredObjectIDs) {
+                    moc.rollback()
+                } else {
+                    for stroke in strokes {
+                        if let snapshot = initialStrokes[stroke.id] {
+                            if snapshot.wasDirty || stroke.isInserted {
+                                stroke.points = snapshot.rawPoints
+                            } else {
+                                moc?.refresh(stroke, mergeChanges: false)
+                            }
+                        }
+                    }
+                    for shape in shapes {
+                        if let snapshot = initialShapes[shape.id] {
+                            if snapshot.wasDirty || shape.isInserted {
+                                shape.points = snapshot.rawPoints
+                            } else {
+                                moc?.refresh(shape, mergeChanges: false)
+                            }
+                        }
+                    }
+                    for image in images {
+                        if let snapshot = initialImages[image.id] {
+                            if snapshot.wasDirty || image.isInserted {
+                                image.x = snapshot.pageFrame.origin.x
+                                image.y = snapshot.pageFrame.origin.y
+                                image.width = snapshot.pageFrame.width
+                                image.height = snapshot.pageFrame.height
+                            } else {
+                                moc?.refresh(image, mergeChanges: false)
+                            }
+                        }
+                    }
+                }
+            }
+
+        case let .resizeShape(shapeID, _, _, rawPoints, wasDirty, didMove):
+            if didMove, let targetNote,
+               let shape = findShape(id: shapeID, in: targetNote, pageIndex: targetPage) {
+                let moc = targetNote.managedObjectContext
+                if let moc, !wasDirty, !shape.isInserted,
+                   canSafelyRollback(moc, restoringOnly: [shape.objectID]) {
+                    moc.rollback()
+                } else if wasDirty || shape.isInserted {
+                    shape.points = rawPoints
+                } else {
+                    moc?.refresh(shape, mergeChanges: false)
+                }
+            }
+
+        case let .resizeImage(imageID, _, _, _, initialPageFrame, wasDirty, didMove):
+            if didMove, let targetNote,
+               let image = findImage(id: imageID, in: targetNote, pageIndex: targetPage) {
+                let moc = targetNote.managedObjectContext
+                if let moc, !wasDirty, !image.isInserted,
+                   canSafelyRollback(moc, restoringOnly: [image.objectID]) {
+                    moc.rollback()
+                } else if wasDirty || image.isInserted {
+                    image.x = initialPageFrame.origin.x
+                    image.y = initialPageFrame.origin.y
+                    image.width = initialPageFrame.width
+                    image.height = initialPageFrame.height
+                } else {
+                    moc?.refresh(image, mergeChanges: false)
+                }
+            }
+        }
+
         dragMode = .none
+        activeDragNote = nil
+    }
+
+    private func canSafelyRollback(_ moc: NSManagedObjectContext, restoringOnly objectIDs: Set<NSManagedObjectID>) -> Bool {
+        moc.processPendingChanges()
+        guard moc.insertedObjects.isEmpty, moc.deletedObjects.isEmpty else {
+            return false
+        }
+        let dirtyIDs = Set(moc.updatedObjects.map(\.objectID))
+        return dirtyIDs.isSubset(of: objectIDs)
     }
 
     // MARK: - Keyboard Actions
@@ -671,16 +840,24 @@ final class CanvasSelectionController {
         noteVM: NoteViewModel?,
         pageIndex: Int,
         pageToOverlay: CGAffineTransform,
-        canvasVM: CanvasViewModel?
+        canvasVM: CanvasViewModel?,
+        firstResponder: NSResponder? = nil
     ) -> Bool {
-        guard let canvasVM, canvasVM.isDrawingMode, !canvasVM.selectedObjects.isEmpty else {
+        guard event.modifierFlags.intersection([.command, .option, .control]).isEmpty else {
+            return false
+        }
+        if firstResponder is NSText {
+            return false
+        }
+        guard let canvasVM, canvasVM.isDrawingMode,
+              (!canvasVM.selectedObjects.isEmpty || isDragging) else {
             return false
         }
 
-        // Escape clears selection regardless of page.
+        // Escape cancels any active drag (restoring initial coordinates) and clears selection.
         if event.keyCode == 53 {
+            cancelActiveDrag(note: note, pageIndex: pageIndex)
             canvasVM.clearSelection()
-            dragMode = .none
             return true
         }
 
@@ -967,24 +1144,31 @@ final class CanvasSelectionController {
         pageToOverlay: CGAffineTransform,
         canvasVM: CanvasViewModel
     ) {
+        let showResizeHandles = (canvasVM.activeTool == .select)
+
         if isSelectionActive(on: pageIndex, canvasVM: canvasVM) {
             if canvasVM.selectedObjects.count == 1, let single = canvasVM.selectedObjects.first {
                 switch single {
                 case .shape(let shapeID):
                     if let shape = findShape(id: shapeID, in: note, pageIndex: pageIndex) {
                         let pts = deserializeStrokePoints(shape.points)
-                        drawShapeSelection(kind: ShapeKind(rawValue: shape.kind) ?? .line, points: pts, in: cg)
+                        drawShapeSelection(
+                            kind: ShapeKind(rawValue: shape.kind) ?? .line,
+                            points: pts,
+                            showHandles: showResizeHandles,
+                            in: cg
+                        )
                     }
                 case .image(let imageID):
                     if let image = findImage(id: imageID, in: note, pageIndex: pageIndex) {
                         let frame = boundingBox(for: image, pageToOverlay: pageToOverlay)
-                        drawImageSelection(frame: frame, in: cg)
+                        drawImageSelection(frame: frame, showHandles: showResizeHandles, in: cg)
                     }
                 case .stroke(let strokeID):
                     if let stroke = (note.strokes as? Set<Stroke> ?? [])
                         .first(where: { $0.pageIndex == Int16(pageIndex) && $0.id == strokeID }),
                        let box = boundingBox(for: stroke) {
-                        drawBoundingSelection(box, showCornerMarkers: true, in: cg)
+                        drawBoundingSelection(box, showCornerMarkers: showResizeHandles, in: cg)
                     }
                 case .textBlock:
                     break
@@ -1002,7 +1186,7 @@ final class CanvasSelectionController {
                     pageToOverlay: pageToOverlay,
                     cg: cg
                 )
-                drawBoundingSelection(groupBox, showCornerMarkers: true, in: cg)
+                drawBoundingSelection(groupBox, showCornerMarkers: showResizeHandles, in: cg)
             }
         }
 
@@ -1012,7 +1196,7 @@ final class CanvasSelectionController {
         }
     }
 
-    private func drawShapeSelection(kind: ShapeKind, points: [CGPoint], in cg: CGContext) {
+    private func drawShapeSelection(kind: ShapeKind, points: [CGPoint], showHandles: Bool, in cg: CGContext) {
         guard points.count >= 2 else { return }
         cg.saveGState()
         cg.addPath(makeShapeCGPath(kind: kind, points: points))
@@ -1022,13 +1206,15 @@ final class CanvasSelectionController {
         cg.strokePath()
         cg.setLineDash(phase: 0, lengths: [])
 
-        for p in points {
-            drawHandle(at: p, in: cg)
+        if showHandles {
+            for p in points {
+                drawHandle(at: p, in: cg)
+            }
         }
         cg.restoreGState()
     }
 
-    private func drawImageSelection(frame: CGRect, in cg: CGContext) {
+    private func drawImageSelection(frame: CGRect, showHandles: Bool, in cg: CGContext) {
         cg.saveGState()
         cg.setLineWidth(1.5)
         cg.setLineDash(phase: 0, lengths: [5, 3])
@@ -1036,8 +1222,10 @@ final class CanvasSelectionController {
         cg.stroke(frame)
         cg.setLineDash(phase: 0, lengths: [])
 
-        for corner in ImageCornerHandle.allCases {
-            drawHandle(at: corner.point(in: frame), in: cg)
+        if showHandles {
+            for corner in ImageCornerHandle.allCases {
+                drawHandle(at: corner.point(in: frame), in: cg)
+            }
         }
         cg.restoreGState()
     }
