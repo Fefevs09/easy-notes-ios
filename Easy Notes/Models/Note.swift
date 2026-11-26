@@ -12,6 +12,7 @@ public class Note: NSManagedObject {
     @NSManaged public var isTrashed: Bool
     @NSManaged public var strokes: NSSet?
     @NSManaged public var shapes: NSSet?
+    @NSManaged var editorImages: NSSet?
     @NSManaged public var pdfData: Data?
     @NSManaged public var pageCount: Int16
 

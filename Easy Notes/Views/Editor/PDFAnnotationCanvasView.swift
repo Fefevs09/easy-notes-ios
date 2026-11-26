@@ -401,6 +401,7 @@ class NSPDFAnnotationView: PDFView {
 class PageDrawingCanvas: NSView {
     let pageIndex: Int
     weak var paperPage: PDFPage?
+    weak var pdfView: PDFView?
     weak var noteVM: NoteViewModel?
     weak var canvasVM: CanvasViewModel?
 
@@ -542,9 +543,22 @@ class PageDrawingCanvas: NSView {
 
         guard let note = noteVM?.selectedNote else { return }
 
-        // Bottom layers (grid + persisted shapes) via the shared CGContext path.
+        // Bottom layers (grid, images, and persisted shapes) via the shared CGContext path.
         if let cg = NSGraphicsContext.current?.cgContext {
             renderGrid(for: note, in: bounds, into: cg)
+            if let page = paperPage, let pdfView {
+                // Convert three PDF page points to account for PDFKit's rotation,
+                // media box origin, and overlay layout.
+                let origin = convert(pdfView.convert(.zero as CGPoint, from: page), from: pdfView)
+                let x = convert(pdfView.convert(CGPoint(x: 1, y: 0), from: page), from: pdfView)
+                let y = convert(pdfView.convert(CGPoint(x: 0, y: 1), from: page), from: pdfView)
+                cg.saveGState()
+                cg.concatenate(CGAffineTransform(a: x.x - origin.x, b: x.y - origin.y,
+                                                 c: y.x - origin.x, d: y.y - origin.y,
+                                                 tx: origin.x, ty: origin.y))
+                renderEditorImages(for: note, pageIndex: pageIndex, into: cg)
+                cg.restoreGState()
+            }
             renderShapes(for: note, pageIndex: pageIndex, into: cg)
         }
 
@@ -997,6 +1011,7 @@ class AnnotatedPDFOverlayProvider: NSObject, PDFPageOverlayViewProvider {
 
         if let existing = overlays[pageIndex] {
             existing.paperPage = page
+            existing.pdfView = pdfView
             existing.noteVM = noteVM
             existing.canvasVM = canvasVM
             existing.currentZoom = zoom
@@ -1005,6 +1020,7 @@ class AnnotatedPDFOverlayProvider: NSObject, PDFPageOverlayViewProvider {
 
         let canvas = PageDrawingCanvas(pageIndex: pageIndex, noteVM: noteVM, canvasVM: canvasVM)
         canvas.paperPage = page
+        canvas.pdfView = pdfView
         canvas.currentZoom = zoom
         overlays[pageIndex] = canvas
         return canvas

@@ -904,7 +904,7 @@ extension NoteContextMenuTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appendingPathComponent("paper.sqlite")
         try autoreleasepool {
-            let source = CoreDataStack.makeModel()
+            let source = CoreDataStack.makeBaseModel()
             let entity = try XCTUnwrap(source.entitiesByName["Note"])
             entity.properties.removeAll { $0.name == "gridColorHex" }
             for entity in source.entities {

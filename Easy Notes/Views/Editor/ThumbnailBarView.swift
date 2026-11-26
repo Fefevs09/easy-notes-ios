@@ -84,6 +84,11 @@ struct PageThumbnail: View {
     let isSelected: Bool
     @State private var thumbnailImage: NSImage?
 
+    private struct ThumbnailRevision: Equatable {
+        let updatedAt: Date
+        let imageIDs: Set<UUID>
+    }
+
     var body: some View {
         let outline = RoundedRectangle(cornerRadius: 6)
 
@@ -123,7 +128,11 @@ struct PageThumbnail: View {
                 }
         }
         .contentShape(Rectangle())
-        .task(id: note.updatedAt) {
+        .task(id: ThumbnailRevision(
+            updatedAt: note.updatedAt,
+            imageIDs: Set((note.editorImages as? Set<EditorImage> ?? [])
+                .filter { Int($0.pageIndex) == number - 1 }.map(\.id))
+        )) {
             thumbnailImage = Self.renderThumbnail(for: page, note: note, pageIndex: number - 1)
         }
         .id(ObjectIdentifier(page))
@@ -153,6 +162,7 @@ struct PageThumbnail: View {
         context.translateBy(x: -displayBounds.minX, y: -displayBounds.minY)
         context.concatenate(transform)
         renderGrid(for: note, in: mediaBox, into: context)
+        renderEditorImages(for: note, pageIndex: pageIndex, into: context)
         renderShapes(for: note, pageIndex: pageIndex, into: context)
         renderStrokes(for: note, pageIndex: pageIndex, into: context)
         context.restoreGState()

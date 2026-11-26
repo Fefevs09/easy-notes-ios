@@ -50,7 +50,8 @@ public class CoreDataStack {
         NSPersistentContainer.defaultDirectoryURL()
     }
     
-    static func makeModel() -> NSManagedObjectModel {
+    // Frozen schema from 49aa070. Keep this definition available to migrate existing SQLite stores.
+    static func makeBaseModel() -> NSManagedObjectModel {
         let model = NSManagedObjectModel()
         
         // --- 1. Entity: Notebook ---
@@ -430,30 +431,21 @@ public class CoreDataStack {
                 || FileManager.default.fileExists(atPath: defaultURL.path)
         )
 
-        let description = Self.makeStoreDescription(url: targetURL)
-        persistentContainer.persistentStoreDescriptions = [description]
-
-        var initialError: NSError?
-        persistentContainer.loadPersistentStores { _, error in
-            initialError = error as NSError?
-        }
-
-        if let error = initialError {
+        do {
+            try Self.loadSQLiteStore(at: targetURL, into: persistentContainer)
+        } catch {
             if preferredURL != nil && targetURL.standardizedFileURL != defaultURL.standardizedFileURL {
-                // Safe fallback to the default store location if a custom directory fails to load.
                 accessedDirectory?.stopAccessingSecurityScopedResource()
                 accessedDirectory = nil
                 loadWarning = "Não foi possível abrir o banco em \(targetURL.deletingLastPathComponent().path) (\(error.localizedDescription)). O Easy Notes abriu o banco padrão como fallback."
 
-                let fallbackDescription = Self.makeStoreDescription(url: defaultURL)
-                persistentContainer.persistentStoreDescriptions = [fallbackDescription]
-                persistentContainer.loadPersistentStores { _, fallbackError in
-                    if let fallbackError = fallbackError as NSError? {
-                        fatalError("Unresolved error \(fallbackError), \(fallbackError.userInfo)")
-                    }
+                do {
+                    try Self.loadSQLiteStore(at: defaultURL, into: persistentContainer)
+                } catch {
+                    fatalError("Unresolved error \(error as NSError)")
                 }
             } else {
-                fatalError("Unresolved error \(error), \(error.userInfo)")
+                fatalError("Unresolved error \(error as NSError)")
             }
         }
 
@@ -461,14 +453,6 @@ public class CoreDataStack {
         self.container = persistentContainer
         self.accessedSecurityScopedDirectoryURL = accessedDirectory
         self.storageLoadWarning = loadWarning
-    }
-
-    private static func makeStoreDescription(url: URL) -> NSPersistentStoreDescription {
-        let description = NSPersistentStoreDescription(url: url)
-        description.type = NSSQLiteStoreType
-        description.shouldMigrateStoreAutomatically = true
-        description.shouldInferMappingModelAutomatically = true
-        return description
     }
 
     private static func resolveCustomStoreURL(from defaults: UserDefaults) -> CustomStoreResolution {

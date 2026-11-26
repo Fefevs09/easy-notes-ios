@@ -20,19 +20,7 @@ enum TestSupport {
 
     static func makeSQLiteContainer(at url: URL) throws -> NSPersistentContainer {
         let container = NSPersistentContainer(name: "EasyNotesModelSQLiteTests", managedObjectModel: sharedModel)
-        let description = NSPersistentStoreDescription(url: url)
-        description.type = NSSQLiteStoreType
-        description.shouldMigrateStoreAutomatically = true
-        description.shouldInferMappingModelAutomatically = true
-        container.persistentStoreDescriptions = [description]
-
-        var loadError: Error?
-        container.loadPersistentStores { _, error in
-            loadError = error
-        }
-        if let loadError {
-            throw loadError
-        }
+        try CoreDataStack.loadSQLiteStore(at: url, into: container)
         return container
     }
 

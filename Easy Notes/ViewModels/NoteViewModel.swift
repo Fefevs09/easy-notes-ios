@@ -470,6 +470,49 @@ public class NoteViewModel: ObservableObject {
         return doc
     }
 
+    @MainActor
+    func insertEditorImage(data: Data, into note: Note, pageIndex: Int) throws {
+        guard note.managedObjectContext === context, !note.isDeleted, !note.objectID.isTemporaryID,
+              let coordinator = context.persistentStoreCoordinator,
+              let index = Int16(exactly: pageIndex), index >= 0,
+              let page = getPDFDocument(for: note)?.page(at: pageIndex) else {
+            throw EditorImageImportError.invalidPage
+        }
+        let bounds = page.bounds(for: .mediaBox)
+        guard bounds.width.isFinite, bounds.height.isFinite, bounds.width > 0, bounds.height > 0,
+              bounds.midX.isFinite, bounds.midY.isFinite else {
+            throw EditorImageImportError.invalidPage
+        }
+        let media = try EditorImageMedia.decode(data)
+        let frame = EditorImageMedia.placement(for: media.size, in: bounds)
+
+        // Save independently of pending title or other edits in the view context.
+        let writer = NSManagedObjectContext(concurrencyType: .mainQueueConcurrencyType)
+        writer.persistentStoreCoordinator = coordinator
+        guard let owner = try writer.existingObject(with: note.objectID) as? Note else {
+            throw EditorImageImportError.invalidPage
+        }
+        let entry = EditorImage(context: writer)
+        entry.id = UUID()
+        entry.createdAt = Date()
+        entry.pageIndex = index
+        entry.data = data
+        entry.x = frame.origin.x
+        entry.y = frame.origin.y
+        entry.width = frame.width
+        entry.height = frame.height
+        entry.note = owner
+
+        let observer = NotificationCenter.default.addObserver(
+            forName: .NSManagedObjectContextDidSave, object: writer, queue: nil
+        ) { [context] notification in
+            context.mergeChanges(fromContextDidSave: notification)
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+        try writer.save()
+        objectWillChange.send()
+    }
+
     // MARK: - PDF Export
     public func exportPDF(for note: Note, to url: URL) throws {
         try exportPDF(for: note, to: url, options: .default)
@@ -499,14 +542,22 @@ public class NoteViewModel: ObservableObject {
 
         for pageIndex in pagesToExport {
             guard let page = sourceDoc.page(at: pageIndex) else { continue }
-            var mediaBox = page.bounds(for: .mediaBox)
-            context.beginPage(mediaBox: &mediaBox)
+            let mediaBox = page.bounds(for: .mediaBox)
+            let transform = page.transform(for: .mediaBox)
+            var outputBox = mediaBox.applying(transform)
+            context.beginPage(mediaBox: &outputBox)
+            context.saveGState()
             page.draw(with: .mediaBox, to: context)
+            context.restoreGState()
+            context.saveGState()
+            context.concatenate(transform)
             if options.includeGrid {
                 renderGrid(for: note, in: mediaBox, into: context)
             }
+            renderEditorImages(for: note, pageIndex: pageIndex, into: context)
             renderShapes(for: note, pageIndex: pageIndex, into: context)
             renderStrokes(for: note, pageIndex: pageIndex, into: context)
+            context.restoreGState()
             context.endPage()
         }
         context.closePDF()
