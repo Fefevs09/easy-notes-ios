@@ -87,6 +87,7 @@ struct PageThumbnail: View {
     private struct ThumbnailRevision: Equatable {
         let updatedAt: Date
         let imageIDs: Set<UUID>
+        let textBlockTimestamps: [UUID: Date]
     }
 
     var body: some View {
@@ -131,7 +132,12 @@ struct PageThumbnail: View {
         .task(id: ThumbnailRevision(
             updatedAt: note.updatedAt,
             imageIDs: Set((note.editorImages as? Set<EditorImage> ?? [])
-                .filter { Int($0.pageIndex) == number - 1 }.map(\.id))
+                .filter { Int($0.pageIndex) == number - 1 }.map(\.id)),
+            textBlockTimestamps: Dictionary(
+                uniqueKeysWithValues: note.textBlocksArray
+                    .filter { Int($0.pageIndex) == number - 1 }
+                    .map { ($0.id, $0.updatedAt) }
+            )
         )) {
             thumbnailImage = Self.renderThumbnail(for: page, note: note, pageIndex: number - 1)
         }
@@ -164,6 +170,7 @@ struct PageThumbnail: View {
         renderGrid(for: note, in: mediaBox, into: context)
         renderEditorImages(for: note, pageIndex: pageIndex, into: context)
         renderPageDrawings(for: note, pageIndex: pageIndex, mediaBox: mediaBox, into: context)
+        renderTextBlocks(for: note, pageIndex: pageIndex, into: context)
         context.restoreGState()
         NSGraphicsContext.restoreGraphicsState()
         let output = NSImage(size: size)

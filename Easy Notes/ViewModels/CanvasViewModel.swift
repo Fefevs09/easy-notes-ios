@@ -9,6 +9,7 @@ public enum ToolType: String, CaseIterable {
     case highlighter = "Marca-texto"
     case eraser = "Borracha"
     case shape = "Forma"      // draws the currently selected ShapeKind
+    case textBox = "Texto"    // adds/edits free text blocks on the page
     case select = "Selecionar" // selects/moves/resizes existing shapes
 }
 
@@ -111,6 +112,10 @@ public class CanvasViewModel: ObservableObject {
     @Published public var selectedShapeID: UUID?
     @Published public var shapeFillEnabled: Bool = false
 
+    // Text block tool state
+    @Published public var textFontSize: CGFloat = TextBlockLayout.defaultFontSize
+    @Published public var editingTextBlockID: UUID?
+
     // Store configurations for each tool for premium persistence during toggle
     private var toolWidths: [ToolType: CGFloat] = [
         .fountainPen: 3.0,
@@ -126,7 +131,8 @@ public class CanvasViewModel: ObservableObject {
         .calligraphy: .blue,
         .pencil: .gray,
         .highlighter: .yellow.opacity(CanvasViewModel.highlighterOpacity),
-        .shape: .black
+        .shape: .black,
+        .textBox: Color(nsColor: TextBlockLayout.resolvedTextColor(from: TextBlockLayout.defaultColorHex))
     ]
     
     public var colorToolContext: PenColorToolContext {
@@ -178,9 +184,11 @@ public class CanvasViewModel: ObservableObject {
     
     public func selectTool(_ tool: ToolType) {
         // Save current configurations before switching (select carries no
-        // width/color of its own; eraser has a size but no color).
+        // width/color of its own; eraser has a size but no color; textBox uses textFontSize).
         if activeTool != .select {
-            toolWidths[activeTool] = strokeWidth
+            if activeTool != .textBox {
+                toolWidths[activeTool] = strokeWidth
+            }
             if activeTool != .eraser {
                 toolColors[activeTool] = effectiveColor(strokeColor, for: activeTool)
             }
@@ -189,6 +197,9 @@ public class CanvasViewModel: ObservableObject {
         // Clear any active selection when leaving the select tool.
         if tool != .select {
             selectedShapeID = nil
+        }
+        if tool != .textBox {
+            editingTextBlockID = nil
         }
 
         activeTool = tool
@@ -205,6 +216,7 @@ public class CanvasViewModel: ObservableObject {
     public func enableReadingMode() {
         isDrawingMode = false
         selectedShapeID = nil
+        editingTextBlockID = nil
     }
     
     private func applyToolDefaults() {

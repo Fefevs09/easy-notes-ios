@@ -12,6 +12,7 @@ struct EditorToolbarView: View {
 
     @Environment(\.displayScale) private var displayScale
     @State private var isSizePopoverPresented = false
+    @State private var isTextSizePopoverPresented = false
     @State private var isNoteSettingsPresented = false
     @State private var isColorPopoverPresented = false
     @State private var isShapePopoverPresented = false
@@ -40,6 +41,7 @@ struct EditorToolbarView: View {
         }
         .onChange(of: contextualTool) { _, newTool in
             isSizePopoverPresented = false
+            isTextSizePopoverPresented = false
             isColorPopoverPresented = false
             if newTool != .shape {
                 isShapePopoverPresented = false
@@ -95,6 +97,16 @@ struct EditorToolbarView: View {
             }
 
             shapePickerButton
+
+            primaryTool("Texto", icon: "textformat", isSelected: contextualTool == .textBox) {
+                isShapePopoverPresented = false
+                if contextualTool != .textBox {
+                    canvasVM.selectTool(.textBox)
+                }
+            }
+            .accessibilityLabel("Texto")
+            .help("Adicionar ou editar bloco de texto")
+
             if let onInsertImage {
                 Button(action: onInsertImage) {
                     iconLabel("photo", color: PixelTheme.inkSecondary)
@@ -149,6 +161,7 @@ struct EditorToolbarView: View {
             if willOpen {
                 isColorPopoverPresented = false
                 isSizePopoverPresented = false
+                isTextSizePopoverPresented = false
                 isNoteSettingsPresented = false
             }
             isShapePopoverPresented = willOpen
@@ -184,6 +197,7 @@ struct EditorToolbarView: View {
             isShapePopoverPresented = false
             isColorPopoverPresented = false
             isSizePopoverPresented = false
+            isTextSizePopoverPresented = false
             isNoteSettingsPresented.toggle()
         } label: {
             iconLabel("gearshape", color: isNoteSettingsPresented ? PixelTheme.accent : PixelTheme.inkSecondary)
@@ -269,6 +283,14 @@ struct EditorToolbarView: View {
                 }
                 Spacer(minLength: 0)
 
+            case .textBox:
+                Text("TEXTO").studioSectionHeader().fixedSize()
+                colorOptions
+                separator
+                textFontSizeOptions
+                Spacer(minLength: 0)
+                hint("Clique na página para adicionar ou editar um bloco de texto")
+
             case .select:
                 Text("SELEÇÃO").studioSectionHeader().fixedSize()
                 selectionOptions
@@ -330,6 +352,7 @@ struct EditorToolbarView: View {
                 isOpen: isColorPopoverPresented
             ) {
                 isSizePopoverPresented = false
+                isTextSizePopoverPresented = false
                 isShapePopoverPresented = false
                 isNoteSettingsPresented = false
                 isColorPopoverPresented.toggle()
@@ -400,6 +423,7 @@ struct EditorToolbarView: View {
             optionLabel(title)
             Button {
                 isColorPopoverPresented = false
+                isTextSizePopoverPresented = false
                 isShapePopoverPresented = false
                 isNoteSettingsPresented = false
                 isSizePopoverPresented.toggle()
@@ -421,6 +445,74 @@ struct EditorToolbarView: View {
             }
         }
         .fixedSize()
+    }
+
+    private var textFontSizeOptions: some View {
+        HStack(spacing: 6) {
+            optionLabel("Fonte")
+            Button {
+                isColorPopoverPresented = false
+                isSizePopoverPresented = false
+                isShapePopoverPresented = false
+                isNoteSettingsPresented = false
+                isTextSizePopoverPresented.toggle()
+            } label: {
+                HStack(spacing: 5) {
+                    Text("\(Int(canvasVM.textFontSize.rounded())) pt")
+                        .monospacedDigit()
+                    Image(systemName: "chevron.down")
+                        .font(PixelTheme.uiFont(size: 9, weight: .semibold))
+                }
+                .modifier(OptionPill())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Tamanho da fonte")
+            .accessibilityValue("\(Int(canvasVM.textFontSize.rounded())) pt")
+            .help("Tamanho da fonte")
+            .popover(isPresented: $isTextSizePopoverPresented) {
+                textFontSizePopoverContent
+            }
+        }
+        .fixedSize()
+    }
+
+    private var textFontSizePopoverContent: some View {
+        let presets: [CGFloat] = [12, 15, 20, 28]
+        return VStack(spacing: 14) {
+            Text("Tamanho da fonte")
+                .font(PixelTheme.uiFont(size: 13, weight: .semibold))
+                .foregroundStyle(PixelTheme.ink)
+
+            HStack(spacing: 6) {
+                ForEach(presets, id: \.self) { size in
+                    segmentButton(
+                        LocalizedStringKey("\(Int(size))"),
+                        isSelected: abs(canvasVM.textFontSize - size) < 0.5
+                    ) {
+                        canvasVM.textFontSize = size
+                    }
+                }
+            }
+            .padding(2)
+            .modifier(OptionBorder())
+
+            VStack(spacing: 4) {
+                Slider(value: $canvasVM.textFontSize, in: TextBlockLayout.fontSizeRange, step: 1) {
+                    Text("Tamanho da fonte")
+                }
+                .labelsHidden()
+                .tint(PixelTheme.accent)
+
+                Text("\(Int(canvasVM.textFontSize.rounded())) pt")
+                    .font(PixelTheme.uiFont(size: 11))
+                    .monospacedDigit()
+                    .foregroundStyle(PixelTheme.muted)
+            }
+        }
+        .padding(16)
+        .frame(width: 210)
+        .studioCard()
+        .background(PixelTheme.paper)
     }
 
     private var separator: some View {
