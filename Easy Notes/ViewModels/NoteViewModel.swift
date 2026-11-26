@@ -651,7 +651,8 @@ public class NoteViewModel: ObservableObject {
         frame: CGRect,
         text: String = "",
         fontSize: Float = Float(TextBlockLayout.defaultFontSize),
-        colorHex: String = TextBlockLayout.defaultColorHex
+        colorHex: String = TextBlockLayout.defaultColorHex,
+        reloadNotes: Bool = true
     ) -> TextBlock? {
         guard !note.isDeleted else { return nil }
         let targetContext = note.managedObjectContext ?? context
@@ -670,7 +671,9 @@ public class NoteViewModel: ObservableObject {
 
         if targetContext === context {
             save()
-            loadNotes()
+            if reloadNotes {
+                loadNotes()
+            }
         } else {
             do {
                 try targetContext.save()
@@ -686,7 +689,8 @@ public class NoteViewModel: ObservableObject {
         text: String? = nil,
         frame: CGRect? = nil,
         fontSize: Float? = nil,
-        colorHex: String? = nil
+        colorHex: String? = nil,
+        reloadNotes: Bool = true
     ) {
         guard !block.isDeleted, let targetContext = block.managedObjectContext else { return }
         let now = Date()
@@ -699,7 +703,9 @@ public class NoteViewModel: ObservableObject {
 
         if targetContext === context {
             save()
-            loadNotes()
+            if reloadNotes {
+                loadNotes()
+            }
         } else {
             do {
                 try targetContext.save()

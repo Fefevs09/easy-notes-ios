@@ -68,10 +68,14 @@ public enum TextBlockLayout {
         return CGRect(x: originX, y: originY, width: width, height: height)
     }
 
-    /// Clamps an existing rect inside `mediaBox` while preserving its top edge when expanding vertically.
+    /// Clamps an existing rect inside `mediaBox`.
     public static func clampedFrame(_ rect: CGRect, in mediaBox: CGRect) -> CGRect {
-        let width = min(max(40, rect.width), max(40, mediaBox.width))
-        let height = min(max(32, rect.height), max(32, mediaBox.height))
+        let maxWidth = max(1.0, mediaBox.width)
+        let maxHeight = max(1.0, mediaBox.height)
+        let minWidth = min(40.0, maxWidth)
+        let minHeight = min(32.0, maxHeight)
+        let width = min(max(minWidth, rect.width), maxWidth)
+        let height = min(max(minHeight, rect.height), maxHeight)
         let minX = mediaBox.minX
         let maxX = max(minX, mediaBox.maxX - width)
         let minY = mediaBox.minY
@@ -111,6 +115,9 @@ public func renderTextBlocks(
 
     context.saveGState()
     for block in blocks {
+        let trimmedText = block.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedText.isEmpty else { continue }
+
         let frame = block.frame
         guard frame.width > 1, frame.height > 1 else { continue }
 

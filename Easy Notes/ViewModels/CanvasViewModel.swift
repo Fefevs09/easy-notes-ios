@@ -115,6 +115,21 @@ public class CanvasViewModel: ObservableObject {
     // Text block tool state
     @Published public var textFontSize: CGFloat = TextBlockLayout.defaultFontSize
     @Published public var editingTextBlockID: UUID?
+    @Published public var isTextStylePopoverPresented: Bool = false
+
+    /// Hooks registered by the active `PDFAnnotationCanvasView.Coordinator` so
+    /// toolbar/navigation/export actions can synchronously commit inline text
+    /// edits or restore focus after a style popover closes.
+    public var onCommitActiveTextEdits: (() -> Void)?
+    public var onRestoreTextEditorFocus: (() -> Void)?
+
+    public func commitActiveTextEdits() {
+        onCommitActiveTextEdits?()
+    }
+
+    public func restoreTextEditorFocus() {
+        onRestoreTextEditorFocus?()
+    }
 
     // Store configurations for each tool for premium persistence during toggle
     private var toolWidths: [ToolType: CGFloat] = [
@@ -198,9 +213,6 @@ public class CanvasViewModel: ObservableObject {
         if tool != .select {
             selectedShapeID = nil
         }
-        if tool != .textBox {
-            editingTextBlockID = nil
-        }
 
         activeTool = tool
         isDrawingMode = true
@@ -216,7 +228,6 @@ public class CanvasViewModel: ObservableObject {
     public func enableReadingMode() {
         isDrawingMode = false
         selectedShapeID = nil
-        editingTextBlockID = nil
     }
     
     private func applyToolDefaults() {

@@ -1077,16 +1077,7 @@ class PageDrawingCanvas: NSView {
         } else {
             let frame = TextBlockLayout.defaultFrame(at: pagePoint, in: mediaBox)
             let colorHex = PenColorComponents.from(canvasVM.strokeColor).hexString
-            if let newBlock = noteVM.addTextBlock(
-                to: note,
-                pageIndex: pageIndex,
-                frame: frame,
-                text: "",
-                fontSize: Float(canvasVM.textFontSize),
-                colorHex: colorHex
-            ) {
-                beginEditing(textBlock: newBlock, in: mediaBox)
-            }
+            beginEditingNewDraft(note: note, frame: frame, fontSize: canvasVM.textFontSize, colorHex: colorHex, in: mediaBox)
         }
     }
 
@@ -1109,6 +1100,37 @@ class PageDrawingCanvas: NSView {
             noteVM: noteVM,
             canvasVM: canvasVM
         )
+        mountTextEditorOverlay(overlay)
+    }
+
+    private func beginEditingNewDraft(
+        note: Note,
+        frame: CGRect,
+        fontSize: CGFloat,
+        colorHex: String,
+        in mediaBox: CGRect
+    ) {
+        onBeginTextEditing?(self)
+        commitTextEditorIfNeeded()
+
+        guard let canvasVM else { return }
+        let overlay = TextBlockEditorOverlay(
+            note: note,
+            pageIndex: pageIndex,
+            initialFrame: frame,
+            fontSize: fontSize,
+            colorHex: colorHex,
+            mediaBox: mediaBox,
+            page: paperPage,
+            pdfView: pdfView,
+            noteVM: noteVM,
+            canvasVM: canvasVM
+        )
+        canvasVM.editingTextBlockID = overlay.blockID
+        mountTextEditorOverlay(overlay)
+    }
+
+    private func mountTextEditorOverlay(_ overlay: TextBlockEditorOverlay) {
         overlay.onDidFinish = { [weak self, weak overlay] restoreFocus in
             guard let self else { return }
             if self.activeTextEditor === overlay {
@@ -1127,8 +1149,12 @@ class PageDrawingCanvas: NSView {
         overlay.focusEditor()
     }
 
-    func commitTextEditorIfNeeded() {
-        activeTextEditor?.finishEditing(restoreCanvasFocus: false)
+    func commitTextEditorIfNeeded(deferPublishedUpdates: Bool = false) {
+        activeTextEditor?.finishEditing(restoreCanvasFocus: false, deferPublishedUpdates: deferPublishedUpdates)
+    }
+
+    func restoreTextEditorFocus() {
+        activeTextEditor?.focusEditor()
     }
 
     func syncActiveTextEditorStyle() {
@@ -1185,14 +1211,20 @@ class AnnotatedPDFOverlayProvider: NSObject, PDFPageOverlayViewProvider {
         }
     }
 
-    func clearCache() {
-        commitAllTextEditors()
+    func clearCache(deferPublishedUpdates: Bool = false) {
+        commitAllTextEditors(deferPublishedUpdates: deferPublishedUpdates)
         overlays.removeAll()
     }
 
-    func commitAllTextEditors(except excluded: PageDrawingCanvas? = nil) {
+    func commitAllTextEditors(except excluded: PageDrawingCanvas? = nil, deferPublishedUpdates: Bool = false) {
         for canvas in overlays.values where canvas !== excluded {
-            canvas.commitTextEditorIfNeeded()
+            canvas.commitTextEditorIfNeeded(deferPublishedUpdates: deferPublishedUpdates)
+        }
+    }
+
+    func restoreTextEditorFocus() {
+        for canvas in overlays.values {
+            canvas.restoreTextEditorFocus()
         }
     }
 
@@ -1239,11 +1271,21 @@ struct PDFAnnotationCanvasView: NSViewRepresentable {
 
     class Coordinator: NSObject {
         let provider: AnnotatedPDFOverlayProvider
+        weak var canvasVM: CanvasViewModel?
         private var cancellables: Set<AnyCancellable> = []
+        var notificationObservers: [NSObjectProtocol] = []
 
         init(noteVM: NoteViewModel, canvasVM: CanvasViewModel) {
             self.provider = AnnotatedPDFOverlayProvider(noteVM: noteVM, canvasVM: canvasVM)
+            self.canvasVM = canvasVM
             super.init()
+
+            canvasVM.onCommitActiveTextEdits = { [weak self] in
+                self?.provider.commitAllTextEditors()
+            }
+            canvasVM.onRestoreTextEditorFocus = { [weak self] in
+                self?.provider.restoreTextEditorFocus()
+            }
 
             canvasVM.$activeTool
                 .sink { [weak self] tool in
@@ -1272,18 +1314,39 @@ struct PDFAnnotationCanvasView: NSViewRepresentable {
                 .store(in: &cancellables)
 
             canvasVM.$strokeColor
-                .sink { [weak self] _ in
-                    guard canvasVM.activeTool == .textBox else { return }
+                .sink { [weak self, weak canvasVM] _ in
+                    guard canvasVM?.activeTool == .textBox else { return }
                     DispatchQueue.main.async {
                         self?.provider.syncActiveTextEditorStyles()
                     }
                 }
                 .store(in: &cancellables)
         }
+
+        func teardown() {
+            provider.commitAllTextEditors()
+            for token in notificationObservers {
+                NotificationCenter.default.removeObserver(token)
+            }
+            notificationObservers.removeAll()
+            cancellables.removeAll()
+            canvasVM?.onCommitActiveTextEdits = nil
+            canvasVM?.onRestoreTextEditorFocus = nil
+        }
+
+        deinit {
+            for token in notificationObservers {
+                NotificationCenter.default.removeObserver(token)
+            }
+        }
     }
 
     func makeCoordinator() -> Coordinator {
         return Coordinator(noteVM: noteVM, canvasVM: canvasVM)
+    }
+
+    static func dismantleNSView(_ nsView: NSPDFAnnotationView, coordinator: Coordinator) {
+        coordinator.teardown()
     }
 
     func makeNSView(context: Context) -> NSPDFAnnotationView {
@@ -1301,19 +1364,19 @@ struct PDFAnnotationCanvasView: NSViewRepresentable {
 
         pdfView.pageOverlayViewProvider = context.coordinator.provider
 
-        NotificationCenter.default.addObserver(forName: .PDFViewPageChanged, object: pdfView, queue: .main) { _ in
-            if let page = pdfView.currentPage, let doc = pdfView.document {
-                let index = doc.index(for: page)
-                if selectedPageIndex != index {
-                    selectedPageIndex = index
-                }
+        let pageObserver = NotificationCenter.default.addObserver(forName: .PDFViewPageChanged, object: pdfView, queue: .main) { [weak pdfView] _ in
+            guard let pdfView, let page = pdfView.currentPage, let doc = pdfView.document else { return }
+            let index = doc.index(for: page)
+            if selectedPageIndex != index {
+                selectedPageIndex = index
             }
         }
+        context.coordinator.notificationObservers.append(pageObserver)
 
         // Reflect user-driven zoom (pinch / trackpad) back into the label. The
         // epsilon guard prevents a feedback loop with our own programmatic
         // scaleFactor assignments in updateNSView.
-        NotificationCenter.default.addObserver(forName: .PDFViewScaleChanged, object: pdfView, queue: .main) { [weak pdfView, weak provider = context.coordinator.provider] _ in
+        let scaleObserver = NotificationCenter.default.addObserver(forName: .PDFViewScaleChanged, object: pdfView, queue: .main) { [weak pdfView, weak provider = context.coordinator.provider] _ in
             guard let pdfView = pdfView else { return }
             if abs(pdfView.scaleFactor - zoomScale) > 0.001 {
                 zoomScale = pdfView.scaleFactor
@@ -1322,6 +1385,7 @@ struct PDFAnnotationCanvasView: NSViewRepresentable {
             pdfView.currentZoom = pdfView.scaleFactor
             pdfView.refreshCursor()
         }
+        context.coordinator.notificationObservers.append(scaleObserver)
 
         return pdfView
     }
@@ -1330,7 +1394,7 @@ struct PDFAnnotationCanvasView: NSViewRepresentable {
         if let note = noteVM.selectedNote, note.id == noteId {
             let doc = noteVM.getPDFDocument(for: note)
             if nsView.document !== doc {
-                context.coordinator.provider.clearCache()
+                context.coordinator.provider.clearCache(deferPublishedUpdates: true)
                 nsView.document = doc
             }
         }

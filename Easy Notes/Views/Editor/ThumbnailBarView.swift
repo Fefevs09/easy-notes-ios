@@ -134,9 +134,10 @@ struct PageThumbnail: View {
             imageIDs: Set((note.editorImages as? Set<EditorImage> ?? [])
                 .filter { Int($0.pageIndex) == number - 1 }.map(\.id)),
             textBlockTimestamps: Dictionary(
-                uniqueKeysWithValues: note.textBlocksArray
+                note.textBlocksArray
                     .filter { Int($0.pageIndex) == number - 1 }
-                    .map { ($0.id, $0.updatedAt) }
+                    .map { ($0.id, $0.updatedAt) },
+                uniquingKeysWith: { max($0, $1) }
             )
         )) {
             thumbnailImage = Self.renderThumbnail(for: page, note: note, pageIndex: number - 1)

@@ -43,13 +43,24 @@ struct EditorToolbarView: View {
             isSizePopoverPresented = false
             isTextSizePopoverPresented = false
             isColorPopoverPresented = false
+            canvasVM.isTextStylePopoverPresented = false
             if newTool != .shape {
                 isShapePopoverPresented = false
             }
         }
         .onChange(of: viewModel.selectedNote?.id) { _, _ in
+            isSizePopoverPresented = false
+            isTextSizePopoverPresented = false
+            isColorPopoverPresented = false
             isNoteSettingsPresented = false
             isShapePopoverPresented = false
+            canvasVM.isTextStylePopoverPresented = false
+        }
+        .onChange(of: isTextSizePopoverPresented) { _, presented in
+            syncTextStylePopoverState(colorOpen: isColorPopoverPresented, textSizeOpen: presented)
+        }
+        .onChange(of: isColorPopoverPresented) { _, presented in
+            syncTextStylePopoverState(colorOpen: presented, textSizeOpen: isTextSizePopoverPresented)
         }
     }
 
@@ -58,6 +69,7 @@ struct EditorToolbarView: View {
 
         return HStack(spacing: 6) {
             Button {
+                canvasVM.commitActiveTextEdits()
                 if let onBackToLibrary {
                     onBackToLibrary()
                 } else {
@@ -119,6 +131,7 @@ struct EditorToolbarView: View {
             separator
 
             Button {
+                canvasVM.commitActiveTextEdits()
                 viewModel.undoLastObject()
             } label: {
                 iconLabel("arrow.uturn.backward", color: canUndo ? PixelTheme.inkSecondary : PixelTheme.muted.opacity(0.5))
@@ -351,11 +364,15 @@ struct EditorToolbarView: View {
                 toolContext: canvasVM.colorToolContext,
                 isOpen: isColorPopoverPresented
             ) {
+                let willOpen = !isColorPopoverPresented
                 isSizePopoverPresented = false
                 isTextSizePopoverPresented = false
                 isShapePopoverPresented = false
                 isNoteSettingsPresented = false
-                isColorPopoverPresented.toggle()
+                if canvasVM.activeTool == .textBox {
+                    canvasVM.isTextStylePopoverPresented = willOpen
+                }
+                isColorPopoverPresented = willOpen
             }
             .popover(isPresented: $isColorPopoverPresented, arrowEdge: .bottom) {
                 PenColorPopoverView(
@@ -451,11 +468,15 @@ struct EditorToolbarView: View {
         HStack(spacing: 6) {
             optionLabel("Fonte")
             Button {
+                let willOpen = !isTextSizePopoverPresented
                 isColorPopoverPresented = false
                 isSizePopoverPresented = false
                 isShapePopoverPresented = false
                 isNoteSettingsPresented = false
-                isTextSizePopoverPresented.toggle()
+                if canvasVM.activeTool == .textBox {
+                    canvasVM.isTextStylePopoverPresented = willOpen
+                }
+                isTextSizePopoverPresented = willOpen
             } label: {
                 HStack(spacing: 5) {
                     Text("\(Int(canvasVM.textFontSize.rounded())) pt")
@@ -474,6 +495,17 @@ struct EditorToolbarView: View {
             }
         }
         .fixedSize()
+    }
+
+    private func syncTextStylePopoverState(colorOpen: Bool, textSizeOpen: Bool) {
+        let shouldHoldEditor = canvasVM.activeTool == .textBox && (colorOpen || textSizeOpen)
+        let wasHeld = canvasVM.isTextStylePopoverPresented
+        canvasVM.isTextStylePopoverPresented = shouldHoldEditor
+        if wasHeld && !shouldHoldEditor && canvasVM.activeTool == .textBox && canvasVM.editingTextBlockID != nil {
+            DispatchQueue.main.async {
+                canvasVM.restoreTextEditorFocus()
+            }
+        }
     }
 
     private var textFontSizePopoverContent: some View {
@@ -596,6 +628,7 @@ struct EditorToolbarView: View {
     }
 
     private func exportPDF() {
+        canvasVM.commitActiveTextEdits()
         guard let note = viewModel.selectedNote else { return }
         PDFExportService.shared.exportPDF(for: note, viewModel: viewModel)
     }
